@@ -4,7 +4,7 @@ This app replaces keeping attendance in a WhatsApp chat. Each morning the owner 
 
 ## Using it
 
-Open **`index.html`** in Chrome, Edge or Safari. It works offline. To use it on phones and share records between Nazeer and the manager, see *On the phones* below.
+Open **https://777naeem-prog.github.io/nazeers-attendance/** — see *On the phones* below for setting up Nazeer's and the manager's phones.
 
 1. **Staff**: add each employee with their name, role, pay and how pay is worked out:
    - **Fixed salary**: a set amount per pay period. Absent days and half days are deducted at *salary ÷ working days in the period*.
@@ -35,39 +35,39 @@ If someone works on a day off or on a day the shop was closed, they are paid an 
 
 ## On the phones (Honor and iPhone)
 
-It is a web app, so it works the same on Android (Chrome on Nazeer's Honor) and iPhone (Safari on the manager's phone).
+The app lives at **https://777naeem-prog.github.io/nazeers-attendance/** (published by GitHub Pages from this repository; every change pushed to `main` goes live within a minute or two). It works the same on Android and iPhone.
 
-1. **The address.** It is published by GitHub Pages from this repository: **https://777naeem-prog.github.io/nazeers-attendance/** — every change pushed to `main` goes live within a minute or two.
-2. **Install it on each phone.** Open the address, then:
-   - **Honor / Android (Chrome):** ⋮ menu → *Add to Home screen* (or *Install app*).
-   - **iPhone (Safari):** Share button → *Add to Home Screen*. Do use the home-screen icon on the iPhone: Safari can clear a website's saved data after a week without a visit, but not an app added to the home screen.
-3. **Sign in.** The app opens on a sign-in screen; nothing else is visible until **nazeer** or **manager** signs in, each with **their own** username and password. Signing out (Settings) removes the shop's records from that phone — they stay in the cloud — and warns first if any change has not reached the cloud yet. Both phones then show the same register, month sheet and pay. Changes reach the other phone within about a minute (or press *Sync now*). Without signal the app keeps working and sends the changes later.
+**No usernames or passwords.** Each person gets a private **setup link**. They tap it once on their phone, choose a **4-digit PIN**, and from then on open the app and type the PIN. The app locks itself after two minutes in the background (or *Settings → Lock now*). After five wrong PINs it makes them wait, longer each time.
 
-If both people mark the same person on the same day, the last change wins. Different people or different days never clash.
+1. **Tap the setup link** on the phone. On the Honor it opens in Chrome; on the iPhone, open it in **Safari**.
+2. **Choose a PIN** (typed twice).
+3. **Add it to the home screen** — Chrome: ⋮ → *Add to Home screen*. Safari: Share → *Add to Home Screen*. On the iPhone, always use the home-screen icon: Safari can clear a website's saved data after a week without a visit, but not an app on the home screen.
 
-### Logins
+Both phones then show the same register, month sheet and pay; changes reach the other phone within about a minute. Without signal the app keeps working and sends the changes later. If both people mark the same person on the same day, the last change wins.
 
-Records are shared through Nazeer's own Supabase project (**nazeers-parts-board**). Only accounts listed as members can see or change anything.
+**Settings → Phones**
+- *Set up another phone for me* — sends your own setup link (e.g. a new phone).
+- *Send a new setup link* (owner only) — makes a new link for someone else and **stops their old one at once**: the phone that used it shows "This phone has been removed". Use it for a lost phone or a new manager.
+- *Forgot PIN?* — tap your setup link again on the phone and choose a new PIN. Nothing is lost.
+- *Remove this phone* — takes the shop's records off the phone (they stay in the cloud); warns first if a change has not reached the cloud yet.
 
-Two logins exist: **nazeer** (owner) and **manager**. They sign in with the username alone; no e-mail address is needed or ever used (behind the scenes they are `nazeer@nms-staff.invalid` and `manager@nms-staff.invalid`). Each was given a temporary password, and the app makes them choose their own the first time they sign in.
+Treat a setup link like a key: send it only to that person.
 
-To add another person, run in the Supabase *SQL Editor* (change the username, temporary password, role and name):
+### Behind the scenes
+
+Records are shared through Nazeer's own Supabase project (**nazeers-parts-board**); only members can read or write them. There are two members, `nazeer` (owner) and `manager` (accounts `nazeer@nms-staff.invalid` and `manager@nms-staff.invalid`; no e-mail is ever sent). A setup link is `…/#join=<login>.<secret>`; the part after `#` never leaves the phone except to sign in. The PIN is stored only on the phone, hashed.
+
+If Nazeer himself loses his link and his phone, an administrator sets a new secret in the Supabase *SQL Editor* and builds the link `https://777naeem-prog.github.io/nazeers-attendance/#join=nazeer.<new secret>`:
 
 ```sql
-do $$ declare uid uuid := gen_random_uuid(); begin
-  insert into auth.users (instance_id, id, aud, role, email, encrypted_password, email_confirmed_at, raw_app_meta_data, raw_user_meta_data, created_at, updated_at,
-    confirmation_token, recovery_token, email_change_token_new, email_change, email_change_token_current, phone_change, phone_change_token, reauthentication_token)
-  values ('00000000-0000-0000-0000-000000000000', uid, 'authenticated', 'authenticated', 'cashier@nms-staff.invalid', extensions.crypt('temporary-pass-123', extensions.gen_salt('bf')), now(),
-    '{"provider":"email","providers":["email"]}', '{"must_change_password": true}', now(), now(), '', '', '', '', '', '', '', '');
-  insert into auth.identities (id, user_id, provider_id, identity_data, provider, created_at, updated_at)
-  values (gen_random_uuid(), uid, uid::text, jsonb_build_object('sub', uid::text, 'email', 'cashier@nms-staff.invalid', 'email_verified', true), 'email', now(), now());
-  insert into public.nms_members (user_id, role, name) values (uid, 'manager', 'Cashier');
-end $$;
+update auth.users set encrypted_password = extensions.crypt('<new secret, 32 random characters>', extensions.gen_salt('bf'))
+where email = 'nazeer@nms-staff.invalid';
+delete from auth.sessions where user_id = (select id from auth.users where email = 'nazeer@nms-staff.invalid');
 ```
 
-A forgotten password: set a new temporary one the same way (`update auth.users set encrypted_password = extensions.crypt('new-temp-pass', extensions.gen_salt('bf')), raw_user_meta_data = raw_user_meta_data || '{"must_change_password": true}' where email = 'manager@nms-staff.invalid';`). To remove someone: *Authentication* → *Users* → delete; they lose access straight away.
+To add another member (e.g. a second manager), see `supabase/` for the table layout: create the user, then add a row to `public.nms_members`; Nazeer can then send them a setup link from Settings.
 
-The database setup is in `supabase/001_nms_attendance_sync.sql` (already applied).
+The database setup is in `supabase/001_nms_attendance_sync.sql` and `supabase/002_nms_owner_reset_login.sql` (both already applied).
 
 ### Backups
 

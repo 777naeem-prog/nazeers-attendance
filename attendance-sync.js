@@ -23,7 +23,8 @@
     const toLogin = (email) => (DOMAIN && email.endsWith('@' + DOMAIN) ? email.slice(0, -DOMAIN.length - 1) : email);
     const OVERLAP_MS = 120000; // re-read the last two minutes each time, so no change is missed
 
-    const blank = () => ({ session: null, shadow: {}, lastPull: '', synced: false });
+    // cred: this phone's own login and secret, from its setup link. removed: the link was replaced by the owner.
+    const blank = () => ({ session: null, shadow: {}, lastPull: '', synced: false, cred: null, removed: false });
     let st = blank();
     try { st = Object.assign(blank(), JSON.parse(localStorage.getItem(STATE_KEY) || '{}')); } catch (e) { /* start fresh */ }
     const persist = () => { try { localStorage.setItem(STATE_KEY, JSON.stringify(st)); } catch (e) { /* storage full */ } };
@@ -119,8 +120,14 @@
       if (st.session.exp - Date.now() < 60000) {
         try { setSession(await authCall('token?grant_type=refresh_token', { refresh_token: st.session.refresh })); }
         catch (e) {
-          if (e.auth) { st.session = null; persist(); emit(); throw new Error('Signed out — please sign in again'); }
-          throw e;
+          if (!e.auth) throw e;
+          // the session ran out: a phone set up with a link signs itself back in
+          if (st.cred) {
+            try { setSession(await authCall('token?grant_type=password', { email: toEmail(st.cred.login), password: st.cred.secret })); return st.session.access; }
+            catch (e2) { if (!e2.auth) throw e2; st.removed = true; }
+          }
+          st.session = null; persist(); emit();
+          throw new Error(st.removed ? 'This phone has been removed — ask Nazeer for a new setup link' : 'Signed out — please sign in again');
         }
       }
       return st.session.access;
@@ -210,9 +217,10 @@
     }
 
     /* ---------- account ---------- */
-    async function signIn(login, password) {
+    async function signIn(login, password, keepState) {
       const j = await authCall('token?grant_type=password', { email: toEmail(login), password });
-      st = blank(); setSession(j);
+      if (!keepState) st = blank();
+      setSession(j);
       const me = await rest('GET', 'nms_members?select=role,name&user_id=eq.' + encodeURIComponent(st.session.uid)).catch(() => null);
       if (me && !me.length) { signOut(); throw new Error('This account has not been given access yet — ask the administrator'); }
       if (me) { st.session.role = me[0].role; st.session.name = me[0].name; persist(); }
@@ -220,9 +228,37 @@
       await run();
       if (state === 'error' && /not been given access/.test(lastError)) { const m = lastError; signOut(); throw new Error(m); }
     }
+    /* ---------- setup links: https://…/#join=<login>.<secret> ---------- */
+    function newSecret() {
+      const b = new Uint8Array(24); crypto.getRandomValues(b);
+      return btoa(String.fromCharCode(...b)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    }
+    function parseLink(hash) {
+      const m = /^#join=([a-z0-9_-]+)\.([A-Za-z0-9_-]{24,})$/i.exec(hash || '');
+      return m ? { login: m[1].toLowerCase(), secret: m[2] } : null;
+    }
+    const linkFor = (login, secret) => (opts.appUrl || location.href.split('#')[0]) + '#join=' + login + '.' + secret;
+    async function signInWithLink(login, secret) {
+      const same = st.cred && st.cred.login === login;
+      await signIn(login, secret, same);
+      st.cred = { login, secret }; st.removed = false; persist(); emit();
+      return same;
+    }
+    /* this phone's own link: set up another phone for the same person */
+    const ownLink = () => (st.cred ? linkFor(st.cred.login, st.cred.secret) : '');
+    async function members() { return rest('GET', 'nms_members?select=user_id,role,name&order=role.desc,name.asc'); }
+    /* owner only: replace someone's link; their old phones stop working */
+    async function resetMember(userId) {
+      const secret = newSecret();
+      const headers = { apikey: KEY, Authorization: 'Bearer ' + await token(), 'Content-Type': 'application/json' };
+      const r = await fetch(URL_ + '/rest/v1/rpc/nms_reset_login', { method: 'POST', headers, body: JSON.stringify({ target_user: userId, new_secret: secret }) });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j.message || 'Could not make a new link');
+      return linkFor(j, secret);
+    }
     function signOut() {
       const s = st.session;
-      if (s) fetch(URL_ + '/auth/v1/logout', { method: 'POST', headers: { apikey: KEY, Authorization: 'Bearer ' + s.access } }).catch(() => {});
+      if (s) fetch(URL_ + '/auth/v1/logout?scope=local', { method: 'POST', headers: { apikey: KEY, Authorization: 'Bearer ' + s.access } }).catch(() => {});
       st = blank(); persist(); setState('idle');
     }
     async function setPassword(password) {
@@ -233,7 +269,7 @@
     function status() {
       const s = st.session;
       if (!s) return { signedIn: false, ok: false, text: 'Not signed in — records are on this phone only' };
-      const who = { signedIn: true, email: s.email, login: toLogin(s.email), role: s.role, name: s.name, mustChange: !!s.mustChange };
+      const who = { signedIn: true, uid: s.uid, email: s.email, login: toLogin(s.email), role: s.role, name: s.name, mustChange: !!s.mustChange };
       if (state === 'syncing') return { ...who, ok: true, text: 'Syncing…' };
       if (state === 'error') return { ...who, ok: false, text: lastError };
       const mins = Math.round((Date.now() - lastOk) / 60000);
@@ -248,6 +284,7 @@
 
     return {
       storage, run, schedule, signIn, signOut, setPassword, status,
+      signInWithLink, parseLink, ownLink, members, resetMember, isRemoved: () => !!st.removed,
       /* changes on this phone the cloud has not received yet */
       pending() {
         const local = toMap(current ? C.normalise(current) : null);

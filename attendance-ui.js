@@ -31,7 +31,7 @@
       const s = cloud.status();
       return `<span class="na-dot ${s.signedIn && s.ok ? 'ok' : s.signedIn ? 'bad' : ''}"></span>${esc(s.signedIn ? s.text : 'This phone only')}`;
     }
-    function cloudCard() {
+    function passwordCard() {
       const s = cloud.status();
       if (!s.signedIn) return `<section class="na-card na-pad" id="na-cloud"><h3 class="na-h3">Share between phones</h3>
         <p class="na-hint">Sign in with the username and password you were given. Use your own login on your own phone — Nazeer and the manager then see the same register and pay, and changes arrive on the other phone within about a minute. Without signal the app keeps working and catches up later.</p>
@@ -43,22 +43,107 @@
         <p class="na-hint">Signed in as <b>${esc(s.login || s.email)}</b>${s.role ? ` (${esc(s.role)})` : ''}. Every change is shared with the other phones.</p>
         <div class="na-actions"><button type="button" class="na-btn" data-a="cloud-sync">Sync now</button><button type="button" class="na-btn" data-a="cloud-pass">Change password</button><button type="button" class="na-btn ghost" data-a="cloud-out">Sign out</button></div></section>`;
     }
-    /* with requireSignIn, nothing but the sign-in screen shows until a member signs in */
-    const gated = () => !!(cloud && opts.requireSignIn && !cloud.status().signedIn);
+
+    function cloudCard() { return pinMode() ? phoneCard() : passwordCard(); }
+
+    /* ---------- PIN lock (requireSignIn): each phone is set up once with its setup link, then opened with a 4-digit PIN ---------- */
+    const pinMode = () => !!(cloud && opts.requireSignIn);
+    const PIN_KEY = (opts.storageKey || 'nms-attendance-v1') + '-pin';
+    const pinStore = () => { try { return JSON.parse(localStorage.getItem(PIN_KEY) || 'null'); } catch (e) { return null; } };
+    const pinSet = () => !!(pinStore() || {}).hash;
+    const clearPin = () => localStorage.removeItem(PIN_KEY);
+    let locked = pinSet(), pinEntry = '', pinFirst = '', pinMsg = '', joining = '', joinError = '', hiddenAt = 0, pinBusy = false;
+    async function pinHash(pin, salt) {
+      const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(pin), 'PBKDF2', false, ['deriveBits']);
+      const bits = await crypto.subtle.deriveBits({ name: 'PBKDF2', hash: 'SHA-256', salt: new TextEncoder().encode(salt), iterations: 150000 }, key, 256);
+      return btoa(String.fromCharCode(...new Uint8Array(bits)));
+    }
+    async function savePin(pin) {
+      const salt = C.uid() + C.uid();
+      localStorage.setItem(PIN_KEY, JSON.stringify({ salt, hash: await pinHash(pin, salt), fails: 0, until: 0 }));
+    }
+    /* true, false, or 'wait' after too many wrong tries (30 s, then doubling) */
+    async function checkPin(pin) {
+      const p = pinStore();
+      if (!p) return true;
+      if (Date.now() < (p.until || 0)) return 'wait';
+      if (await pinHash(pin, p.salt) === p.hash) { p.fails = 0; p.until = 0; localStorage.setItem(PIN_KEY, JSON.stringify(p)); return true; }
+      p.fails = (p.fails || 0) + 1;
+      if (p.fails >= 5) p.until = Date.now() + 30000 * 2 ** Math.min(p.fails - 5, 6);
+      localStorage.setItem(PIN_KEY, JSON.stringify(p));
+      return false;
+    }
+    const gated = () => pinMode() && (!!joining || !cloud.status().signedIn || !pinSet() || locked);
     let wasGated = gated();
     function gateScreen() {
-      el.innerHTML = `<div class="na-gate"><form class="na-gate-box" data-form="login" autocomplete="on">
+      const s = cloud.status();
+      let body;
+      if (joining) body = '<p class="na-gate-step">Setting up this phone…</p>';
+      else if (!s.signedIn) body = (cloud.isRemoved()
+          ? '<p class="na-gate-step"><b>This phone has been removed.</b> A new setup link was made for this person. Ask Nazeer for it and tap it on this phone.</p>'
+          : '<p>Staff attendance &amp; pay</p><p class="na-gate-step">To set up this phone, tap the <b>setup link</b> you were sent (on WhatsApp).</p>')
+        + (joinError ? `<p class="na-pin-msg">${esc(joinError)}</p>` : '');
+      else {
+        const title = !pinSet() ? (pinFirst ? 'Type the same PIN again' : 'Choose a 4-digit PIN for this phone') : 'Enter your PIN';
+        body = `${!pinSet() && !pinFirst ? `<p>Set up for <b>${esc(s.name || s.login)}</b>. You will type this PIN each time you open the app.</p>` : ''}
+          <p class="na-pin-title">${title}</p>
+          <div class="na-pin-dots" aria-hidden="true">${[0, 1, 2, 3].map((i) => `<span class="${i < pinEntry.length ? 'on' : ''}"></span>`).join('')}</div>
+          <p class="na-pin-msg" role="status">${esc(pinMsg)}</p>
+          <div class="na-pin-pad">${['1', '2', '3', '4', '5', '6', '7', '8', '9', '', '0', '⌫'].map((k) => (k ? `<button type="button" data-a="pin-key" data-k="${k}" aria-label="${k === '⌫' ? 'Delete' : k}">${k}</button>` : '<span></span>')).join('')}</div>
+          ${pinSet() ? '<button type="button" class="na-gate-link" data-a="pin-forgot">Forgot PIN?</button>' : ''}`;
+      }
+      el.innerHTML = `<div class="na-gate"><div class="na-gate-box">
         <div class="na-gate-mark">NMS</div>
         <h1>${esc(data.settings.business || "Nazeer's Motor Spares")}</h1>
-        <p>Staff attendance &amp; pay — sign in to continue.</p>
-        <label class="na-fld"><span>Username</span><input id="na-email" name="username" type="text" autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false" placeholder="e.g. nazeer" required></label>
-        <label class="na-fld"><span>Password</span><input id="na-pass" name="password" type="password" autocomplete="current-password" required></label>
-        <button class="na-btn primary na-gate-go">Sign in</button>
-        <p class="na-gate-small">For the owner and manager only. Forgotten your password? Ask the administrator for a new temporary one.</p>
-      </form></div>`;
-      const f = el.querySelector('[data-form="login"]');
-      f.addEventListener('submit', (e) => { e.preventDefault(); ACT['cloud-in'](f.querySelector('.na-gate-go')); });
-      const u = f.querySelector('#na-email'); if (u && matchMedia('(hover: hover)').matches) u.focus();
+        ${body}</div></div>`;
+    }
+    /* a setup link was opened: https://…/#join=<login>.<secret> */
+    async function handleJoin() {
+      const j = cloud && cloud.parseLink && cloud.parseLink(location.hash);
+      if (!j) return;
+      history.replaceState(null, '', location.href.split('#')[0]);
+      joining = j.login; joinError = ''; closeModal(); render();
+      try {
+        await cloud.signInWithLink(j.login, j.secret);
+        clearPin(); locked = false; pinEntry = ''; pinFirst = ''; pinMsg = '';
+      } catch (e) {
+        joinError = e instanceof TypeError ? 'No internet connection — connect and tap the link again.'
+          : /wrong username|invalid/i.test(e.message) ? 'This setup link no longer works. Ask Nazeer for a new one.' : e.message;
+      }
+      joining = ''; data = C.normalise(storage.load()); ui.tab = 'today'; render();
+    }
+    function onVisible() {
+      if (!pinMode() || !pinSet()) return;
+      if (document.hidden) hiddenAt = Date.now();
+      else if (hiddenAt && Date.now() - hiddenAt > 120000 && !locked) { locked = true; pinEntry = ''; pinMsg = ''; render(); }
+    }
+    function shareLink(link, who) {
+      share(`${data.settings.business} — staff attendance app${who ? ` for ${who}` : ''}.\n\nTap this link on the phone to set it up, then choose a 4-digit PIN:\n${link}\n\nKeep this message private — the link opens the app.`);
+    }
+    function phoneCard() {
+      const s = cloud.status();
+      return `<section class="na-card na-pad" id="na-cloud"><h3 class="na-h3">This phone</h3>
+        <p class="na-sync"><span class="na-dot ${s.ok ? 'ok' : 'bad'}"></span>${esc(s.text)}</p>
+        <p class="na-hint">Set up for <b>${esc(s.name || s.login)}</b>${s.role ? ` (${esc(s.role)})` : ''}. Every change is shared with the other phones. The app locks itself after two minutes in the background.</p>
+        <div class="na-actions"><button type="button" class="na-btn" data-a="cloud-sync">Sync now</button><button type="button" class="na-btn" data-a="pin-lock">Lock now</button><button type="button" class="na-btn" data-a="pin-change">Change PIN</button></div>
+        <h3 class="na-h3" style="margin-top:18px">Phones</h3>
+        <div id="na-members"><p class="na-hint">Loading…</p></div>
+        <div class="na-actions" style="margin-top:14px"><button type="button" class="na-btn ghost" data-a="cloud-out">Remove this phone</button></div></section>`;
+    }
+    async function fillMembers() {
+      const box = el.querySelector('#na-members');
+      if (!box || !cloud.members) return;
+      const s = cloud.status();
+      let list = [];
+      try { list = await cloud.members(); } catch (e) { box.innerHTML = '<p class="na-hint">Connect to the internet to see who has access.</p>'; return; }
+      if (!el.contains(box)) return;
+      box.innerHTML = `<div class="na-people">${list.map((m) => {
+        const me = m.user_id === s.uid;
+        return `<div class="na-person"><div><b>${esc(m.name || m.role)}</b><i>${esc(m.role)}${me ? ' · this phone' : ''}</i></div>${me
+          ? '<button type="button" class="na-btn sm" data-a="my-link">Set up another phone for me</button>'
+          : s.role === 'owner' ? `<button type="button" class="na-btn sm" data-a="member-link" data-id="${esc(m.user_id)}" data-name="${esc(m.name || m.role)}">Send a new setup link</button>` : ''}</div>`;
+      }).join('')}</div>
+      ${s.role === 'owner' ? '<p class="na-hint">A new setup link replaces the old one: the phone that used the old link stops working straight away (lost phone, or a new manager).</p>' : ''}`;
     }
     if (cloud && cloud.onStatus) cloud.onStatus(() => {
       if (gated() !== wasGated) { wasGated = gated(); if (!el.querySelector('.na-modal.forced')) render(); return; }
@@ -140,6 +225,7 @@
       const main = el.querySelector('.na-main');
       if (!data.employees.length && ui.tab !== 'settings' && ui.tab !== 'staff') ui.tab = 'staff';
       ({ today: viewToday, month: viewMonth, pay: viewPay, staff: viewStaff, settings: viewSettings })[ui.tab](main);
+      if (ui.tab === 'settings' && pinMode()) fillMembers();
       el.querySelectorAll('.na-tabs button').forEach((b) => b.classList.toggle('on', b.dataset.k === ui.tab));
     }
     /* first sign-in with a temporary password: choose your own before anything else */
@@ -568,15 +654,49 @@
         if (opts.requireSignIn) {
           await cloud.run();
           const n = cloud.pending ? cloud.pending() : 0;
-          if (!confirm(n ? `${n} change(s) on this phone have not reached the cloud yet — probably no signal. If you sign out now they are lost. Sign out anyway?`
-            : 'Sign out on this phone? The shop\'s records are removed from this phone but stay safe in the cloud. Sign in again to get them back.')) return;
-          cloud.signOut(); cloud.clearLocal(); data = C.normalise(null); ui.tab = 'today'; render();
+          if (!confirm(n ? `${n} change(s) on this phone have not reached the cloud yet — probably no signal. If you remove this phone now they are lost. Remove it anyway?`
+            : 'Remove this phone? The shop\'s records are taken off this phone but stay safe in the cloud. To use it again, tap the setup link.')) return;
+          cloud.signOut(); cloud.clearLocal(); clearPin(); locked = false; data = C.normalise(null); ui.tab = 'today'; render();
           return;
         }
         if (!confirm('Sign out on this phone? The records stay on this phone and in the cloud.')) return;
         cloud.signOut(); render();
       },
       'cloud-sync': () => { cloud.run(); toast('Syncing…'); },
+      'pin-key': async (t) => {
+        if (pinBusy) return;
+        const k = t.dataset.k;
+        if (k === '⌫') { pinEntry = pinEntry.slice(0, -1); pinMsg = ''; render(); return; }
+        if (pinEntry.length >= 4) return;
+        pinEntry += k; pinMsg = ''; render();
+        if (pinEntry.length < 4) return;
+        const entered = pinEntry;
+        pinBusy = true;
+        try {
+          if (!pinSet()) {
+            pinEntry = '';
+            if (!pinFirst) { pinFirst = entered; render(); return; }
+            if (entered !== pinFirst) { pinFirst = ''; pinMsg = 'The two PINs were not the same — choose again'; render(); return; }
+            await savePin(entered); pinFirst = ''; locked = false; render(); toast('PIN saved'); cloud.run(); return;
+          }
+          const ok = await checkPin(entered);
+          pinEntry = '';
+          if (ok === true) { locked = false; data = C.normalise(storage.load()); render(); cloud.run(); }
+          else { pinMsg = ok === 'wait' ? 'Too many wrong tries — wait a minute, then try again' : 'Wrong PIN'; render(); }
+        } finally { pinBusy = false; }
+      },
+      'pin-forgot': () => modal('Forgot your PIN?', '<p>Open WhatsApp on this phone and tap your <b>setup link</b> again — you can then choose a new PIN. Nothing is lost; the records are safe in the cloud.</p><p class="na-hint">Lost the link? Nazeer can send a new one from Settings → Phones.</p>', null),
+      'pin-lock': () => { locked = true; pinEntry = ''; pinMsg = ''; render(); },
+      'pin-change': () => { if (!confirm('Choose a new PIN for this phone?')) return; clearPin(); pinFirst = ''; pinEntry = ''; pinMsg = ''; locked = false; render(); },
+      'my-link': () => shareLink(cloud.ownLink(), cloud.status().name),
+      'member-link': async (t) => {
+        const name = t.dataset.name;
+        if (!confirm(`Make a new setup link for ${name}? The phone ${name} uses now stops working straight away; they set it up again with the new link.`)) return;
+        t.disabled = true;
+        try { const link = await cloud.resetMember(t.dataset.id); toast('New link made — send it to ' + name); shareLink(link, name); }
+        catch (e) { toast(e instanceof TypeError ? 'No internet connection' : e.message); }
+        t.disabled = false;
+      },
       'cloud-pass': () => modal('Change password', `${field('New password (at least 8 characters)', 'pw', '', { type: 'password', req: true })}`, (f) => {
         if (f.pw.length < 8) { toast('Use at least 8 characters'); return false; }
         cloud.setPassword(f.pw).then(() => toast('Password changed'), (e) => toast(e.message));
@@ -600,12 +720,21 @@
     };
     const onChange = (e) => { const t = e.target; if (t.dataset && CHANGE[t.dataset.aChange] && el.contains(t)) CHANGE[t.dataset.aChange](t); };
     const onKey = (e) => { if (e.key === 'Escape' && !el.querySelector('.na-modal.forced')) closeModal(); };
+    const onDocKey = (e) => {
+      if (!el.querySelector('.na-pin-pad') || e.ctrlKey || e.metaKey) return;
+      if (/^[0-9]$/.test(e.key)) ACT['pin-key']({ dataset: { k: e.key } });
+      else if (e.key === 'Backspace') ACT['pin-key']({ dataset: { k: '⌫' } });
+    };
     el.addEventListener('click', onClick);
     el.addEventListener('change', onChange);
     el.addEventListener('keydown', onKey);
+    document.addEventListener('keydown', onDocKey);
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('hashchange', handleJoin);
 
     render();
     forcePassword();
+    handleJoin();
 
     /* what the host system can use */
     return {
@@ -615,7 +744,7 @@
       isBusy: () => !!el.querySelector('.na-modal-back') || (el.contains(document.activeElement) && /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName)),
       show: (tab) => { ui.tab = tab; render(); },
       payFor: (empId, iso) => { const e = empById(empId); return e ? C.calcPeriod(data, e, C.periodFor(e, iso || C.localToday())) : null; },
-      destroy: () => { el.removeEventListener('click', onClick); el.removeEventListener('change', onChange); el.removeEventListener('keydown', onKey); el.innerHTML = ''; el.classList.remove('nms-att'); },
+      destroy: () => { el.removeEventListener('click', onClick); el.removeEventListener('change', onChange); el.removeEventListener('keydown', onKey); document.removeEventListener('keydown', onDocKey); document.removeEventListener('visibilitychange', onVisible); window.removeEventListener('hashchange', handleJoin); el.innerHTML = ''; el.classList.remove('nms-att'); },
     };
   }
 

@@ -151,6 +151,22 @@
 .na-gate-box .na-fld input { font-size: 16px; padding: 11px 12px; }
 .na-gate-small { font-size: 12.5px; color: var(--na-muted); margin: 0 !important; text-align: center; }
 
+.na-gate-step { margin: 0 !important; color: var(--na-ink) !important; }
+.na-gate-link { border: 0; background: none; color: var(--na-muted); text-decoration: underline; cursor: pointer; justify-self: center; font-size: 14px; padding: 6px; }
+.na-pin-title { text-align: center; font-weight: 600; margin: 4px 0 0 !important; color: var(--na-ink) !important; }
+.na-pin-dots { display: flex; justify-content: center; gap: 16px; margin: 4px 0; }
+.na-pin-dots span { width: 15px; height: 15px; border-radius: 50%; border: 2px solid var(--na-ink); }
+.na-pin-dots span.on { background: var(--na-ink); }
+.na-pin-msg { text-align: center; color: var(--c-A) !important; min-height: 1.2em; margin: 0 !important; font-size: 14px; }
+.na-pin-pad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.na-pin-pad button { height: 58px; border-radius: 14px; border: 1px solid #d5d9de; background: #f6f7f9; font-size: 24px; font-weight: 500; cursor: pointer; }
+.na-pin-pad button:active { background: #e6e9ed; }
+
+.na-people { display: grid; }
+.na-person { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; padding: 10px 0; border-bottom: 1px dashed var(--na-line); }
+.na-person > div { display: grid; }
+.na-person i { font-style: normal; font-size: 13px; color: var(--na-muted); }
+
 /* forms & modal */
 .na-form { display: grid; gap: 12px; }
 .na-form.g2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
