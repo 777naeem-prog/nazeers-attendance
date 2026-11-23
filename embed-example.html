@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Example — attendance inside another system</title>
+<link rel="stylesheet" href="attendance.css">
+<style>
+  body { margin: 0; font-family: system-ui, sans-serif; display: grid; grid-template-columns: 200px 1fr; min-height: 100vh; }
+  .host-menu { background: #2b2f36; color: #fff; padding: 16px; }
+  .host-menu a { display: block; color: #cfd4da; padding: 6px 0; text-decoration: none; }
+</style>
+</head>
+<body>
+<!-- Pretend this is Nazeer's other system (stock, sales …). The attendance module lives in one element. -->
+<nav class="host-menu"><b>Nazeer's system</b><a href="#">Sales</a><a href="#">Stock</a><a href="#">Staff attendance</a></nav>
+<div id="staff-attendance"></div>
+<script src="attendance-core.js"></script>
+<script src="attendance-ui.js"></script>
+<script src="embed-example.js"></script>
+</body>
+</html>
