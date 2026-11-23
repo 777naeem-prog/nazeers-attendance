@@ -46,9 +46,17 @@
         const size = o.size || 10, bold = !!o.bold, cs = codes(str);
         if (!cs.length) return;
         let tx = x;
-        if (o.align === 'right') tx = x - width(str, size, bold);
-        else if (o.align === 'center') tx = x - width(str, size, bold) / 2;
-        ops.push(`BT ${rgb(o.color)} rg /${bold ? 'F2' : 'F1'} ${f(size)} Tf ${f(tx)} ${f(H - y)} Td (${esc(cs)}) Tj ET`);
+        const wd = width(str, size, bold) + (o.spacing || 0) * cs.length;
+        if (o.align === 'right') tx = x - wd;
+        else if (o.align === 'center') tx = x - wd / 2;
+        const sp = `${f(o.spacing || 0)} Tc `; // character spacing stays set until changed, so always set it
+        if (o.rotate) {
+          // turned text (a stamp): rotate around the point x, y
+          const t = (o.rotate * Math.PI) / 180, co = Math.cos(t), si = Math.sin(t);
+          ops.push(`BT ${rgb(o.color)} rg ${sp}/${bold ? 'F2' : 'F1'} ${f(size)} Tf ${f(co)} ${f(si)} ${f(-si)} ${f(co)} ${f(x)} ${f(H - y)} Tm (${esc(cs)}) Tj ET`);
+          return;
+        }
+        ops.push(`BT ${rgb(o.color)} rg ${sp}/${bold ? 'F2' : 'F1'} ${f(size)} Tf ${f(tx)} ${f(H - y)} Td (${esc(cs)}) Tj ET`);
       },
       rect(x, y, w, h, color, radius) {
         ops.push(`${rgb(color)} rg`);
@@ -58,6 +66,10 @@
           + `${f(X + w)} ${f(Y + h - r)} l ${f(X + w)} ${f(Y + h - r + k)} ${f(X + w - r + k)} ${f(Y + h)} ${f(X + w - r)} ${f(Y + h)} c `
           + `${f(X + r)} ${f(Y + h)} l ${f(X + r - k)} ${f(Y + h)} ${f(X)} ${f(Y + h - r + k)} ${f(X)} ${f(Y + h - r)} c `
           + `${f(X)} ${f(Y + r)} l ${f(X)} ${f(Y + r - k)} ${f(X + r - k)} ${f(Y)} ${f(X + r)} ${f(Y)} c f`);
+      },
+      /* an outlined (not filled) box */
+      frame(x, y, w, h, color, lw) {
+        ops.push(`${rgb(color)} RG ${f(lw || 0.8)} w [] 0 d ${f(x)} ${f(H - y - h)} ${f(w)} ${f(h)} re S`);
       },
       line(x1, y1, x2, y2, color, lw, dash) {
         ops.push(`${rgb(color)} RG ${f(lw || 0.6)} w ${dash ? '[' + dash + '] 0 d' : '[] 0 d'} ${f(x1)} ${f(H - y1)} m ${f(x2)} ${f(H - y2)} l S`);

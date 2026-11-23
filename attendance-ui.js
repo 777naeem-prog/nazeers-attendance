@@ -470,70 +470,192 @@
     function slipPdf(empId) {
       const { e, a, r } = slipFor(empId);
       if (!r || !root.NMSPdf) return null;
-      const P = root.NMSPdf.create(), s = data.settings, c = r.counts;
-      const L = 48, R = 547, INK = '#0f172a', MUTED = '#5b6577', LINE = '#d9deea', ACC = '#4058ff', RED = '#e11d48', GREEN = '#16a34a';
-      // header band
-      P.rect(0, 0, 595, 104, ACC);
-      P.rect(0, 96, 595, 8, '#7b4dff');
-      P.rect(L, 30, 44, 44, '#ffffff', 11);
-      P.text(L + 22, 57, 'NMS', { size: 12.5, bold: true, color: ACC, align: 'center' });
-      P.text(L + 58, 50, P.fit(s.business, 19, true, 290), { size: 19, bold: true, color: '#ffffff' });
-      P.text(L + 58, 68, s.phone ? s.phone : 'Staff attendance & pay', { size: 10, color: '#dfe5ff' });
-      P.text(R, 50, 'PAY SLIP', { size: 18, bold: true, color: '#ffffff', align: 'right' });
-      P.text(R, 68, `${fmtDate(r.start)} – ${fmtDate(r.end)}`, { size: 10, color: '#dfe5ff', align: 'right' });
-      let y = 138;
-      const label = (x, yy, t) => P.text(x, yy, t, { size: 8.5, color: MUTED });
-      const value = (x, yy, t, max) => P.text(x, yy, P.fit(t, 11, true, max || 230), { size: 11, bold: true, color: INK });
-      label(L, y, 'EMPLOYEE'); label(300, y, 'JOB'); y += 15;
-      value(L, y, e.name); value(300, y, e.role || '—'); y += 22;
-      label(L, y, 'ID NUMBER'); label(300, y, 'PAID'); y += 15;
-      value(L, y, e.idNo || '—'); value(300, y, payDayText(e).replace(/^on /, 'On '), 247); y += 30;
-      const section = (t) => { P.text(L, y, t, { size: 9, bold: true, color: ACC }); P.line(L, y + 6, R, y + 6, LINE, 0.8); y += 24; };
-      // attendance: eight small boxes
-      section('ATTENDANCE');
-      const boxes = [['Working days', c.expected], ['Present', c.P + c.L], ['Late', c.L], ['Half days', c.H], ['Absent', c.A], ['Sick', c.S], ['Leave', c.V], ['Overtime', `${round2(c.otHours)} h`]];
-      const bw = (R - L - 3 * 8) / 4;
-      boxes.forEach(([t, v], i) => {
-        const bx = L + (i % 4) * (bw + 8), by = y - 12 + Math.floor(i / 4) * 46;
-        P.rect(bx, by, bw, 38, '#f1f4fb', 7);
-        P.text(bx + 10, by + 14, t, { size: 8, color: MUTED });
-        P.text(bx + 10, by + 30, String(v), { size: 12.5, bold: true, color: t === 'Absent' && c.A ? RED : INK });
+      const P = root.NMSPdf.create(), s = data.settings, c = r.counts, today = C.localToday();
+      const L = 40, R = 555, CW = R - L;
+      const NAVY = '#111a3a', INK = '#0f172a', MUTED = '#5b6577', FAINT = '#94a3b8', LINE = '#dfe4ee', SOFT = '#f3f5fb';
+      const ACC = '#4058ff', VIO = '#7b4dff', RED = '#e11d48', GREEN = '#16a34a';
+      const COL = { P: '#16a34a', L: '#d97706', H: '#7c3aed', A: '#e11d48', S: '#0284c7', V: '#0d9488', O: '#64748b' };
+      const daily = e.payType === 'daily';
+      const earned = round2(r.gross - r.latePen);
+      const initials = e.name.split(/\s+/).filter(Boolean).map((w) => w[0]).join('').toUpperCase().slice(0, 3) || 'EMP';
+      const slipNo = `NMS-${initials}-${r.end.replace(/-/g, '')}`;
+
+      // ---- the money for this slip: brought forward + earned − paid = balance ----
+      const winEnd = C.addDays(r.end, 3); // payments made up to three days after pay day count for this slip
+      const before = a.periods.filter((p) => p.end < r.start).reduce((t, p) => t + p.earned, 0);
+      const paidBefore = a.payments.filter((x) => x.date < r.start).reduce((t, x) => t + x.amount, 0);
+      const bf = round2(a.opening + before - paidBefore);
+      const paidIn = a.payments.filter((x) => x.date >= r.start && x.date <= winEnd).slice().reverse();
+      const paidSum = round2(paidIn.reduce((t, x) => t + x.amount, 0));
+      const bal = round2(bf + earned - paidSum);
+      const year = r.end.slice(0, 4);
+      const ytdEarned = round2([...a.periods, ...(a.current ? [a.current] : [])].filter((p) => p.end.startsWith(year) && p.end <= r.end).reduce((t, p) => t + (p.earned ?? round2(p.gross - p.latePen)), 0));
+      const ytdPaid = round2(a.payments.filter((x) => x.date.startsWith(year) && x.date <= winEnd).reduce((t, x) => t + x.amount, 0));
+
+      // ---- header ----
+      P.rect(0, 0, 595, 96, NAVY);
+      P.rect(0, 96, 397, 5, ACC); P.rect(397, 96, 198, 5, VIO);
+      P.rect(L, 24, 46, 46, ACC, 12);
+      P.text(L + 23, 52, 'NMS', { size: 13, bold: true, color: '#ffffff', align: 'center' });
+      P.text(L + 60, 44, P.fit(s.business, 19, true, 280), { size: 19, bold: true, color: '#ffffff' });
+      P.text(L + 60, 62, [s.phone, 'Staff attendance & pay'].filter(Boolean).join('  ·  '), { size: 9.5, color: '#b9c3ea' });
+      P.text(R, 44, 'PAY SLIP', { size: 21, bold: true, color: '#ffffff', align: 'right', spacing: 1.5 });
+      P.text(R, 62, slipNo, { size: 9.5, color: '#b9c3ea', align: 'right' });
+
+      // ---- slip facts ----
+      let y = 114;
+      P.rect(L, y, CW, 42, SOFT, 8);
+      const facts = [['PAY PERIOD', `${fmtDate(r.start)} – ${fmtDate(r.end)}`], ['PAY DATE', fmtDate(r.end, true)], ['ISSUED', fmtDate(today)], ['PAID', payDayText(e).replace(/^on /, '')]];
+      const fw = [168, 122, 92, 133];
+      let fx = L + 12;
+      facts.forEach(([t, v], i) => {
+        P.text(fx, y + 17, t, { size: 7.5, bold: true, color: MUTED, spacing: 0.6 });
+        P.text(fx, y + 32, P.fit(v, 10, true, fw[i] - 14), { size: 10, bold: true, color: INK });
+        fx += fw[i];
       });
-      y += 92 - 12 + 18;
-      const row = (t, amt, o) => {
-        o = o || {};
-        P.text(L, y, P.fit(t, o.bold ? 11 : 10.5, !!o.bold, 360), { size: o.bold ? 11 : 10.5, bold: !!o.bold, color: o.color || INK });
-        P.text(R, y, amt, { size: o.bold ? 11.5 : 10.5, bold: !!o.bold, color: o.color || INK, align: 'right' });
-        y += 6; if (!o.noLine) P.line(L, y, R, y, LINE, 0.5, '2 2'); y += 14;
+      y += 58;
+
+      // ---- employee ----
+      const sectionTitle = (t, right) => {
+        P.text(L, y, t, { size: 8.5, bold: true, color: ACC, spacing: 0.8 });
+        if (right) P.text(R, y, right, { size: 8.5, color: MUTED, align: 'right' });
+        P.line(L, y + 6, R, y + 6, LINE, 0.8); y += 22;
       };
-      // earned this period
-      section('EARNED THIS PERIOD');
-      const lines = r.lines.filter((l) => l.kind !== 'adv');
-      lines.slice(0, 8).forEach((l) => row(l.label, money(l.amount), { color: l.amount < 0 ? RED : INK }));
-      row('Earned this period', money(round2(r.gross - r.latePen)), { bold: true, noLine: true });
-      y += 8;
-      // paid during the period
-      section('PAID');
-      const paidIn = a.payments.filter((x) => x.date >= r.start && x.date <= C.addDays(r.end, 6)).slice().reverse();
-      if (!paidIn.length) row('Nothing paid in this period', '', { color: MUTED });
-      paidIn.slice(0, 7).forEach((x) => row(`${fmtDate(x.date)} · ${x.method || 'Paid'}${x.note ? ' — ' + x.note : ''}`, money(x.amount)));
-      if (paidIn.length > 7) row(`…and ${paidIn.length - 7} more payment(s)`, money(paidIn.slice(7).reduce((t, x) => t + x.amount, 0)));
-      y += 6;
-      // account summary
-      const owe = a.owed > 0.004, ahead = a.owed < -0.004;
-      P.rect(L, y, R - L, 70, '#eef1ff', 10);
-      const cw = (R - L) / 3;
-      [['Earned in total', money(a.earned), INK], ['Paid in total', money(a.paid), INK], [ahead ? 'Paid ahead' : 'Still to pay', money(Math.abs(a.owed)), owe ? RED : GREEN]].forEach(([t, v, col], i) => {
-        P.text(L + 16 + i * cw, y + 24, t, { size: 9, color: MUTED });
-        P.text(L + 16 + i * cw, y + 50, v, { size: i === 2 ? 17 : 15, bold: true, color: col });
+      sectionTitle('EMPLOYEE');
+      const perPay = daily ? 0 : (r.lines[0] ? r.lines[0].amount : num(e.rate));
+      const rateText = daily ? `${money(num(e.rate))} per day`
+        : e.schedule === 'monthdays' ? `${money(num(e.rate))}/month · ${money(perPay)}/pay`
+        : e.schedule === 'monthly' ? `${money(num(e.rate))} a month` : e.schedule === 'weekly' ? `${money(num(e.rate))} a week` : `${money(num(e.rate))} every two weeks`;
+      const emp = [['Name', e.name], ['Job', e.role || '—'], ['ID number', e.idNo || '—'],
+        ['Pay basis', daily ? 'Daily rate' : 'Fixed salary'], ['Rate', rateText], ['Day rate', r.dayRate ? money(r.dayRate) : '—'],
+        ['Phone', e.phone || '—'], ['Started', e.startDate ? fmtDate(e.startDate) : '—'], ['Working days', (e.workDays || []).slice().sort().map((d) => C.DAY_NAMES[d].slice(0, 3)).join(' ') || '—']];
+      const ew = CW / 3;
+      emp.forEach(([t, v], i) => {
+        const ex = L + (i % 3) * ew, ey = y + Math.floor(i / 3) * 27;
+        P.text(ex, ey, t, { size: 8, color: MUTED });
+        P.text(ex, ey + 13, P.fit(v, 10, true, ew - 12), { size: 10, bold: true, color: INK });
       });
-      y += 70;
-      if (r.end > C.localToday()) P.text(L, y + 16, 'This pay period is not over yet — amounts are as at ' + fmtDate(C.localToday()) + '.', { size: 8.5, color: MUTED });
-      // signatures and footer
-      const sy = Math.max(y + 60, 735);
-      P.line(L, sy, L + 200, sy, '#94a3b8', 0.8); P.text(L, sy + 14, 'Employer', { size: 9, color: MUTED });
-      P.line(R - 200, sy, R, sy, '#94a3b8', 0.8); P.text(R - 200, sy + 14, 'Employee — received', { size: 9, color: MUTED });
-      P.text(297.5, 815, `${s.business} · pay slip made ${fmtDate(C.localToday())}`, { size: 8, color: '#94a3b8', align: 'center' });
+      y += 3 * 27 + 4;
+
+      // ---- attendance: one square per day ----
+      sectionTitle('ATTENDANCE', `${fmtDate(r.start)} – ${fmtDate(r.end)}`);
+      const days = [];
+      C.eachDay(r.start, r.end, (d) => days.push(d));
+      const gap = 3, cw = Math.min(40, (CW - gap * (days.length - 1)) / days.length);
+      days.forEach((d, i) => {
+        const m = C.getMark(data, d, e.id), st = m && m.s, exp = C.expected(data, e, d), closed = data.closed[d];
+        const cx = L + i * (cw + gap);
+        P.text(cx + cw / 2, y, C.DAY_NAMES[C.dow(d)][0], { size: 6.5, color: FAINT, align: 'center' });
+        let bg = '#ffffff', fg = FAINT, letter = '·';
+        if (st) { bg = COL[st] || MUTED; fg = '#ffffff'; letter = st; }
+        else if (closed) { bg = '#e2e8f0'; fg = MUTED; letter = 'C'; }
+        else if (!exp) { bg = '#f1f5f9'; fg = '#cbd5e1'; letter = '–'; }
+        else if (d <= today) { bg = '#fff7e6'; fg = '#d97706'; letter = '?'; }
+        P.rect(cx, y + 5, cw, 26, bg, 4);
+        if (!st && exp && !closed) P.frame(cx + 0.4, y + 5.4, cw - 0.8, 25.2, d <= today ? '#f5c46b' : LINE, 0.6);
+        P.text(cx + cw / 2, y + 16, String(+d.slice(8)), { size: cw < 16 ? 6 : 7, color: st ? '#ffffff' : MUTED, align: 'center' });
+        P.text(cx + cw / 2, y + 27, letter, { size: cw < 16 ? 7.5 : 8.5, bold: true, color: fg, align: 'center' });
+      });
+      y += 44;
+      const tally = [['Working days', c.expected], ['Present', c.P + c.L], ['Late', c.L], ['Half', c.H], ['Absent', c.A], ['Sick', c.S], ['Leave', c.V], ['Overtime', `${round2(c.otHours)} h`]];
+      const tw = CW / tally.length;
+      tally.forEach(([t, v], i) => {
+        P.text(L + i * tw, y, t, { size: 7.5, color: MUTED });
+        P.text(L + i * tw, y + 14, String(v), { size: 11, bold: true, color: t === 'Absent' && c.A ? RED : INK });
+      });
+      y += 24;
+      P.text(L, y, 'P present · L late · H half day · A absent · S sick (paid) · V leave (paid) · O day off · C shop closed · – not a working day · ? not marked', { size: 6.8, color: FAINT });
+      y += 20;
+
+      // ---- earnings and deductions ----
+      sectionTitle('EARNINGS AND DEDUCTIONS');
+      const X1 = L + 300, X2 = L + 405, X3 = R;
+      P.rect(L, y - 12, CW, 18, SOFT, 4);
+      P.text(L + 8, y, 'Description', { size: 8, bold: true, color: MUTED });
+      P.text(X1, y, 'Days / hours', { size: 8, bold: true, color: MUTED, align: 'right' });
+      P.text(X2, y, 'Rate', { size: 8, bold: true, color: MUTED, align: 'right' });
+      P.text(X3 - 8, y, 'Amount', { size: 8, bold: true, color: MUTED, align: 'right' });
+      y += 20;
+      const q = (n) => String(round2(n)).replace(/\.0+$/, '');
+      // the day rate exactly as the pay was worked out (not rounded), so every line adds up to the total
+      const dr = daily ? num(e.rate) : c.expected ? (e.schedule === 'monthdays' ? num(e.rate) / C.payDaysOf(e).length : num(e.rate)) / c.expected : 0;
+      const rows = [];
+      if (daily) {
+        const paidDays = c.P + c.L + c.S + c.V + 0.5 * c.H;
+        rows.push(['Days paid (present, late, sick, leave; half days count ½)', q(paidDays), money(dr), round2(paidDays * dr)]);
+      } else {
+        rows.push([perPay && e.schedule === 'monthdays' ? `Basic salary (${payDayText(e).replace(/^on /, '')})` : 'Basic salary for the period', '', '', perPay]);
+        if (c.A) rows.push(['Less: absent', q(c.A), money(dr), -round2(c.A * dr)]);
+        if (c.H) rows.push(['Less: half days (½ day each)', q(c.H), money(dr / 2), -round2(0.5 * c.H * dr)]);
+        if (c.beforeStart) rows.push(['Less: working days before start date', q(c.beforeStart), money(dr), -round2(c.beforeStart * dr)]);
+      }
+      if (c.extra) rows.push(['Extra days worked on days off', q(c.extra), money(dr), round2(c.extra * dr)]);
+      if (r.overtime) rows.push(['Overtime', `${q(c.otHours)} h`, money(num(e.otRate)), r.overtime]);
+      if (r.latePen) rows.push(['Less: late arrivals', q(c.L), money(num(e.lateDeduct)), -r.latePen]);
+      rows.forEach(([d, qty, rate, amt]) => {
+        P.text(L + 8, y, P.fit(d, 9.5, false, 250), { size: 9.5, color: INK });
+        if (qty !== '') P.text(X1, y, qty, { size: 9.5, color: INK, align: 'right' });
+        if (rate) P.text(X2, y, rate, { size: 9.5, color: MUTED, align: 'right' });
+        P.text(X3 - 8, y, money(round2(amt)), { size: 9.5, color: amt < 0 ? RED : INK, align: 'right' });
+        P.line(L, y + 6, R, y + 6, LINE, 0.5, '1.5 2'); y += 16;
+      });
+      const grossE = round2(rows.filter((x) => x[3] > 0).reduce((t, x) => t + x[3], 0));
+      const deduct = round2(-rows.filter((x) => x[3] < 0).reduce((t, x) => t + x[3], 0));
+      y += 2;
+      P.text(X2, y, 'Gross earnings', { size: 9, color: MUTED, align: 'right' }); P.text(X3 - 8, y, money(grossE), { size: 9.5, color: INK, align: 'right' }); y += 15;
+      P.text(X2, y, 'Total deductions', { size: 9, color: MUTED, align: 'right' }); P.text(X3 - 8, y, deduct ? money(-deduct) : money(0), { size: 9.5, color: deduct ? RED : INK, align: 'right' }); y += 10;
+      P.rect(X1 - 40, y, R - X1 + 40, 24, NAVY, 5);
+      P.text(X1 - 30, y + 16, 'NET EARNED THIS PERIOD', { size: 8.5, bold: true, color: '#ffffff', spacing: 0.4 });
+      P.text(X3 - 8, y + 16.5, money(earned), { size: 11.5, bold: true, color: '#ffffff', align: 'right' });
+      y += 40;
+
+      // ---- payments ----
+      sectionTitle('PAYMENTS', `${fmtDate(r.start)} – ${fmtDate(winEnd)}`);
+      // as many payment rows as fit above the account boxes (which must start by y 668)
+      let room = Math.max(1, Math.floor((668 - 24 - y) / 16));
+      if (paidIn.length > room) room = Math.max(1, room - 1);
+      if (!paidIn.length) { P.text(L + 8, y, 'No payments in this period.', { size: 9.5, color: MUTED }); y += 18; }
+      paidIn.slice(0, room).forEach((x) => {
+        P.text(L + 8, y, fmtDate(x.date, true), { size: 9.5, color: INK });
+        P.text(L + 120, y, x.method || 'Paid', { size: 9.5, color: MUTED });
+        if (x.note) P.text(L + 210, y, P.fit(x.note, 9.5, false, 190), { size: 9.5, color: MUTED });
+        P.text(X3 - 8, y, money(x.amount), { size: 9.5, color: INK, align: 'right' });
+        P.line(L, y + 6, R, y + 6, LINE, 0.5, '1.5 2'); y += 16;
+      });
+      if (paidIn.length > room) { P.text(L + 8, y, `…and ${paidIn.length - room} more payment(s)`, { size: 9, color: MUTED }); P.text(X3 - 8, y, money(round2(paidIn.slice(room).reduce((t, x) => t + x.amount, 0))), { size: 9.5, color: INK, align: 'right' }); y += 17; }
+      P.text(X2, y + 2, 'Total paid', { size: 9, color: MUTED, align: 'right' }); P.text(X3 - 8, y + 2, money(paidSum), { size: 10, bold: true, color: INK, align: 'right' });
+      y += 22;
+
+      // ---- account statement and year to date ----
+      const by = Math.min(Math.max(y, 650), 668), bh = 98, w1 = 330, w2 = CW - w1 - 10;
+      P.rect(L, by, w1, bh, SOFT, 9);
+      P.text(L + 14, by + 18, 'ACCOUNT', { size: 8, bold: true, color: ACC, spacing: 0.8 });
+      const acct = [['Brought forward', money(bf)], ['+ Earned this period', money(earned)], ['− Paid this period', money(paidSum)]];
+      acct.forEach(([t, v], i) => { P.text(L + 14, by + 36 + i * 14, t, { size: 9, color: MUTED }); P.text(L + w1 - 14, by + 36 + i * 14, v, { size: 9.5, color: INK, align: 'right' }); });
+      P.line(L + 14, by + 72, L + w1 - 14, by + 72, '#c7cfe2', 0.8);
+      const owe = bal > 0.004, ahead = bal < -0.004;
+      P.text(L + 14, by + 88, owe ? 'Balance still to pay' : ahead ? 'Paid ahead' : 'Balance', { size: 10, bold: true, color: INK });
+      P.text(L + w1 - 14, by + 88.5, owe || ahead ? money(Math.abs(bal)) : `${money(0)} — paid up`, { size: 13, bold: true, color: owe ? RED : GREEN, align: 'right' });
+      const yx = L + w1 + 10;
+      P.rect(yx, by, w2, bh, NAVY, 9);
+      P.text(yx + 14, by + 18, `YEAR TO DATE ${year}`, { size: 8, bold: true, color: '#b9c3ea', spacing: 0.8 });
+      P.text(yx + 14, by + 40, 'Earned', { size: 9, color: '#b9c3ea' }); P.text(yx + w2 - 14, by + 40, money(ytdEarned), { size: 10.5, bold: true, color: '#ffffff', align: 'right' });
+      P.text(yx + 14, by + 60, 'Paid', { size: 9, color: '#b9c3ea' }); P.text(yx + w2 - 14, by + 60, money(ytdPaid), { size: 10.5, bold: true, color: '#ffffff', align: 'right' });
+      P.text(yx + 14, by + 84, `Balance today: ${a.owed < -0.004 ? money(-a.owed) + ' ahead' : money(Math.max(0, a.owed))}`, { size: 8.5, color: '#b9c3ea' });
+      // paid stamp: the period is over and nothing is owed on it
+      if (r.end <= today && !owe) {
+        P.frame(L + w1 - 128, by - 30, 100, 32, '#16a34a', 2);
+        P.text(L + w1 - 78, by - 9, 'PAID', { size: 18, bold: true, color: GREEN, align: 'center', spacing: 3 });
+      }
+      if (r.end > today) P.text(L, by + bh + 14, `This pay period is not over yet — amounts are as at ${fmtDate(today)}.`, { size: 8, color: MUTED });
+
+      // ---- signatures and footer ----
+      const sy = 790;
+      P.line(L, sy, L + 200, sy, '#94a3b8', 0.8); P.text(L, sy + 12, `For ${s.business}`, { size: 8.5, color: MUTED });
+      P.line(R - 200, sy, R, sy, '#94a3b8', 0.8); P.text(R - 200, sy + 12, `${e.name} — received`, { size: 8.5, color: MUTED });
+      P.line(L, 818, R, 818, LINE, 0.6);
+      P.text(L, 830, `${s.business} · Pay slip ${slipNo} · Confidential`, { size: 7.5, color: FAINT });
+      P.text(R, 830, `Issued ${fmtDate(today)}`, { size: 7.5, color: FAINT, align: 'right' });
       const filename = `Pay slip ${e.name} ${r.end}.pdf`.replace(/[\\/:*?"<>|]+/g, '');
       return { bytes: P.output(`Pay slip - ${e.name} - ${fmtDate(r.start)} to ${fmtDate(r.end)}`), filename, name: e.name };
     }
