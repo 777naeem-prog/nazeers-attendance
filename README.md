@@ -18,7 +18,7 @@ Open **https://777naeem-prog.github.io/nazeers-attendance/** — see *On the pho
    - **Everyone at a glance** at the top: per person *Earned* (every pay day so far), *Paid* (everything handed over, on pay day or in between) and *To pay*, with a bar showing how much has been paid, and the totals for everyone.
    - Each person's card: Earned · Paid · To pay now, the next pay day and what will be due then (paying ahead lowers it), this period's attendance and how the amount was worked out, and every payment (tap × to remove a mistake).
    - *Pay*: any amount, any date, cash or bank, with an optional note — part of the wages, the full amount, or money in between pay days. Shortcuts fill in "still owed" or "up to the next pay day".
-   - *Pay slip* (print) or *WhatsApp*: the last pay period — what was earned, what was paid, and the balance.
+   - *Pay slip PDF*: makes a one-page PDF pay slip on the phone for the last pay period — attendance, what was earned, what was paid and the balance — and opens the share menu, so it can go straight to the worker on WhatsApp (or be saved to Files / sent by e-mail). Where sharing is not available the PDF is downloaded. *Print* prints the same slip.
 5. **Settings**: business name, currency, the date attendance started being kept here, a list of closed days, and **backups**.
 
 ### Statuses
@@ -83,6 +83,7 @@ The module is built so it can be dropped into another of Nazeer's Motor Spares' 
 |---|---|
 | `attendance-core.js` | The engine: pay periods, pay calculation, WhatsApp text. No screen code. Works in the browser (`NMSAttendanceCore`) and in Node (`require`). |
 | `attendance-ui.js` | The screens. `NMSAttendance.mount(element, options)` draws everything inside one element. |
+| `attendance-pdf.js` | Makes the PDF pay slips on the phone (no internet or extra app needed). |
 | `attendance-sync.js` | Optional cloud sync. `NMSSync.create({ url, key })` gives a `storage` and `cloud` to pass to `mount`. |
 | `attendance.css` | Styles. Every rule is scoped to `.nms-att`, so it does not change the host's look. |
 | `index.html` + `start.js`, `sw.js`, `manifest.webmanifest`, `icons/` | The stand-alone app, installable on a phone and usable offline. |

@@ -408,8 +408,8 @@
           ${a.payments.length ? `<table class="na-lines">${a.payments.slice(0, 40).map((x) => `<tr><td>${fmtDate(x.date, true)}<span class="na-hint"> · ${esc(x.method || 'Paid')}${x.note ? ' · ' + esc(x.note) : ''}</span></td><td>${money(x.amount)}</td><td class="na-del"><button type="button" class="na-x sm" data-a="del-pay" data-id="${x.id}" data-k="${x.kind}" aria-label="Remove this payment">×</button></td></tr>`).join('')}</table>` : '<p class="na-hint">Nothing paid yet.</p>'}
         </details>
         <div class="na-pay-foot">
-          <button type="button" class="na-btn sm" data-a="slip" data-e="${e.id}">Pay slip</button>
-          <button type="button" class="na-btn sm wa" data-a="share-slip" data-e="${e.id}">WhatsApp</button>
+          <button type="button" class="na-btn sm wa" data-a="slip-pdf" data-e="${e.id}">Pay slip PDF</button>
+          <button type="button" class="na-btn sm" data-a="slip" data-e="${e.id}">Print</button>
           <button type="button" class="na-btn primary" data-a="pay" data-e="${e.id}">Pay ${esc(e.name.split(' ')[0])}</button>
         </div>
       </section>`;
@@ -466,6 +466,78 @@
         <div class="sign"><div>Employer</div><div>Employee — received</div></div>
       </div>`, `Pay slip ${e.name} ${r.end}`);
     }
+    /* pay slip as a PDF file, made on the phone (no internet needed) */
+    function slipPdf(empId) {
+      const { e, a, r } = slipFor(empId);
+      if (!r || !root.NMSPdf) return null;
+      const P = root.NMSPdf.create(), s = data.settings, c = r.counts;
+      const L = 48, R = 547, INK = '#0f172a', MUTED = '#5b6577', LINE = '#d9deea', ACC = '#4058ff', RED = '#e11d48', GREEN = '#16a34a';
+      // header band
+      P.rect(0, 0, 595, 104, ACC);
+      P.rect(0, 96, 595, 8, '#7b4dff');
+      P.rect(L, 30, 44, 44, '#ffffff', 11);
+      P.text(L + 22, 57, 'NMS', { size: 12.5, bold: true, color: ACC, align: 'center' });
+      P.text(L + 58, 50, P.fit(s.business, 19, true, 290), { size: 19, bold: true, color: '#ffffff' });
+      P.text(L + 58, 68, s.phone ? s.phone : 'Staff attendance & pay', { size: 10, color: '#dfe5ff' });
+      P.text(R, 50, 'PAY SLIP', { size: 18, bold: true, color: '#ffffff', align: 'right' });
+      P.text(R, 68, `${fmtDate(r.start)} – ${fmtDate(r.end)}`, { size: 10, color: '#dfe5ff', align: 'right' });
+      let y = 138;
+      const label = (x, yy, t) => P.text(x, yy, t, { size: 8.5, color: MUTED });
+      const value = (x, yy, t, max) => P.text(x, yy, P.fit(t, 11, true, max || 230), { size: 11, bold: true, color: INK });
+      label(L, y, 'EMPLOYEE'); label(300, y, 'JOB'); y += 15;
+      value(L, y, e.name); value(300, y, e.role || '—'); y += 22;
+      label(L, y, 'ID NUMBER'); label(300, y, 'PAID'); y += 15;
+      value(L, y, e.idNo || '—'); value(300, y, payDayText(e).replace(/^on /, 'On '), 247); y += 30;
+      const section = (t) => { P.text(L, y, t, { size: 9, bold: true, color: ACC }); P.line(L, y + 6, R, y + 6, LINE, 0.8); y += 24; };
+      // attendance: eight small boxes
+      section('ATTENDANCE');
+      const boxes = [['Working days', c.expected], ['Present', c.P + c.L], ['Late', c.L], ['Half days', c.H], ['Absent', c.A], ['Sick', c.S], ['Leave', c.V], ['Overtime', `${round2(c.otHours)} h`]];
+      const bw = (R - L - 3 * 8) / 4;
+      boxes.forEach(([t, v], i) => {
+        const bx = L + (i % 4) * (bw + 8), by = y - 12 + Math.floor(i / 4) * 46;
+        P.rect(bx, by, bw, 38, '#f1f4fb', 7);
+        P.text(bx + 10, by + 14, t, { size: 8, color: MUTED });
+        P.text(bx + 10, by + 30, String(v), { size: 12.5, bold: true, color: t === 'Absent' && c.A ? RED : INK });
+      });
+      y += 92 - 12 + 18;
+      const row = (t, amt, o) => {
+        o = o || {};
+        P.text(L, y, P.fit(t, o.bold ? 11 : 10.5, !!o.bold, 360), { size: o.bold ? 11 : 10.5, bold: !!o.bold, color: o.color || INK });
+        P.text(R, y, amt, { size: o.bold ? 11.5 : 10.5, bold: !!o.bold, color: o.color || INK, align: 'right' });
+        y += 6; if (!o.noLine) P.line(L, y, R, y, LINE, 0.5, '2 2'); y += 14;
+      };
+      // earned this period
+      section('EARNED THIS PERIOD');
+      const lines = r.lines.filter((l) => l.kind !== 'adv');
+      lines.slice(0, 8).forEach((l) => row(l.label, money(l.amount), { color: l.amount < 0 ? RED : INK }));
+      row('Earned this period', money(round2(r.gross - r.latePen)), { bold: true, noLine: true });
+      y += 8;
+      // paid during the period
+      section('PAID');
+      const paidIn = a.payments.filter((x) => x.date >= r.start && x.date <= C.addDays(r.end, 6)).slice().reverse();
+      if (!paidIn.length) row('Nothing paid in this period', '', { color: MUTED });
+      paidIn.slice(0, 7).forEach((x) => row(`${fmtDate(x.date)} · ${x.method || 'Paid'}${x.note ? ' — ' + x.note : ''}`, money(x.amount)));
+      if (paidIn.length > 7) row(`…and ${paidIn.length - 7} more payment(s)`, money(paidIn.slice(7).reduce((t, x) => t + x.amount, 0)));
+      y += 6;
+      // account summary
+      const owe = a.owed > 0.004, ahead = a.owed < -0.004;
+      P.rect(L, y, R - L, 70, '#eef1ff', 10);
+      const cw = (R - L) / 3;
+      [['Earned in total', money(a.earned), INK], ['Paid in total', money(a.paid), INK], [ahead ? 'Paid ahead' : 'Still to pay', money(Math.abs(a.owed)), owe ? RED : GREEN]].forEach(([t, v, col], i) => {
+        P.text(L + 16 + i * cw, y + 24, t, { size: 9, color: MUTED });
+        P.text(L + 16 + i * cw, y + 50, v, { size: i === 2 ? 17 : 15, bold: true, color: col });
+      });
+      y += 70;
+      if (r.end > C.localToday()) P.text(L, y + 16, 'This pay period is not over yet — amounts are as at ' + fmtDate(C.localToday()) + '.', { size: 8.5, color: MUTED });
+      // signatures and footer
+      const sy = Math.max(y + 60, 735);
+      P.line(L, sy, L + 200, sy, '#94a3b8', 0.8); P.text(L, sy + 14, 'Employer', { size: 9, color: MUTED });
+      P.line(R - 200, sy, R, sy, '#94a3b8', 0.8); P.text(R - 200, sy + 14, 'Employee — received', { size: 9, color: MUTED });
+      P.text(297.5, 815, `${s.business} · pay slip made ${fmtDate(C.localToday())}`, { size: 8, color: '#94a3b8', align: 'center' });
+      const filename = `Pay slip ${e.name} ${r.end}.pdf`.replace(/[\\/:*?"<>|]+/g, '');
+      return { bytes: P.output(`Pay slip - ${e.name} - ${fmtDate(r.start)} to ${fmtDate(r.end)}`), filename, name: e.name };
+    }
+
     function printMonth() {
       const tbl = el.querySelector('.na-grid');
       printHTML(`<div class="nap-month"><h1>${esc(data.settings.business)} — attendance ${el.querySelector('.na-h1').textContent}</h1>${tbl.outerHTML}
@@ -666,6 +738,12 @@
       },
 
       slip: (t) => printSlip(t.dataset.e),
+      'slip-pdf': async (t) => {
+        const pdf = slipPdf(t.dataset.e);
+        if (!pdf) { toast('No pay period yet'); return; }
+        const how = await root.NMSPdf.share(pdf.bytes, pdf.filename);
+        if (how === 'downloaded') toast('Pay slip saved as a PDF');
+      },
       'share-slip': (t) => { const { e, a, r } = slipFor(t.dataset.e); if (!r) return; share(C.payText(data, e, r, money, a)); },
       advance: (t) => payModal(t.dataset.e),
 

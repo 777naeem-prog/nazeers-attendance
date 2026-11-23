@@ -209,7 +209,7 @@
       // fixed salary: the full amount, less unpaid days. A day is worth salary ÷ working days in the period.
       dayRate = c.expected ? rate / c.expected : 0;
       earned = rate;
-      lines.push({ label: perMonth ? `Salary for the period (${trim(num(emp.rate))} a month ÷ ${payDaysOf(emp).length})` : 'Salary for the period', amount: round2(rate) });
+      lines.push({ label: perMonth ? `Salary for the period (${(data.settings && data.settings.currency) || ''}${num(emp.rate).toLocaleString('en-US')} a month ÷ ${payDaysOf(emp).length})` : 'Salary for the period', amount: round2(rate) });
       const unpaid = c.A + 0.5 * c.H + c.beforeStart;
       if (c.A) lines.push({ label: `Absent ${trim(c.A)} day(s)`, amount: -round2(c.A * dayRate) });
       if (c.H) lines.push({ label: `Half days ${trim(c.H)} (½ day each)`, amount: -round2(0.5 * c.H * dayRate) });
