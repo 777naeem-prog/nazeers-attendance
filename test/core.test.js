@@ -112,3 +112,56 @@ test('normalise fills missing fields', () => {
   assert.equal(d.employees[0].schedule, 'monthly');
   assert.deepEqual(d.advances, []);
 });
+
+test('set dates each month: 10th, 20th and 30th (30th falls back to the end of February)', () => {
+  const e = emp({ schedule: 'monthdays', payDays: [10, 20, 30] });
+  assert.deepEqual(C.periodFor(e, '2026-11-05'), { start: '2026-10-31', end: '2026-11-10' });
+  assert.deepEqual(C.periodFor(e, '2026-11-10'), { start: '2026-10-31', end: '2026-11-10' });
+  assert.deepEqual(C.periodFor(e, '2026-11-11'), { start: '2026-11-11', end: '2026-11-20' });
+  assert.deepEqual(C.periodFor(e, '2026-11-25'), { start: '2026-11-21', end: '2026-11-30' });
+  assert.deepEqual(C.periodFor(e, '2026-12-31'), { start: '2026-12-31', end: '2027-01-10' });
+  assert.deepEqual(C.periodFor(e, '2027-02-25'), { start: '2027-02-21', end: '2027-02-28' });
+  assert.deepEqual(C.periodFor(e, '2027-03-01'), { start: '2027-03-01', end: '2027-03-10' });
+  assert.deepEqual(C.periodFor({ ...e, payDays: '10, 20, 30' }, '2026-11-12'), { start: '2026-11-11', end: '2026-11-20' });
+});
+
+test('set dates each month: the monthly salary is split over the pay dates', () => {
+  const d = C.blankData();
+  const e = emp({ schedule: 'monthdays', payDays: [10, 20, 30], rate: 9000 });
+  d.employees.push(e);
+  const r = C.calcPeriod(d, e, C.periodFor(e, '2026-11-15'), '2026-11-20');
+  assert.equal(r.gross, 3000);
+});
+
+test('running account: pay any amount, any day; what is left is still owed', () => {
+  const d = C.blankData();
+  d.settings.since = '2026-11-01';
+  const e = emp({ schedule: 'monthdays', payDays: [10, 20, 30], rate: 9000 });
+  d.employees.push(e);
+  // nothing marked: salary is not reduced. Pay days 10 Nov and 20 Nov have passed by the 23rd.
+  d.payments.push({ id: 'p1', empId: 'e1', paidOn: '2026-11-10', net: 3000, method: 'Cash' });
+  d.payments.push({ id: 'p2', empId: 'e1', paidOn: '2026-11-15', net: 500, method: 'Cash' });   // random mid-month payment
+  d.advances.push({ id: 'a1', empId: 'e1', date: '2026-11-18', amount: 200 });                   // old-style advance counts too
+  let a = C.account(d, e, '2026-11-23');
+  assert.equal(a.earned, 6000);   // 10 Nov + 20 Nov periods (the first covers 31 Oct – 10 Nov)
+  assert.equal(a.paid, 3700);
+  assert.equal(a.owed, 2300);
+  assert.equal(a.current.end, '2026-11-30');
+  assert.equal(a.nextPay, 5300);  // 2300 still owed + 3000 for the period ending on the 30th
+  // paying ahead lowers the next pay
+  d.payments.push({ id: 'p3', empId: 'e1', paidOn: '2026-11-23', net: 3000, method: 'Cash' });
+  a = C.account(d, e, '2026-11-23');
+  assert.equal(a.owed, -700);
+  assert.equal(a.nextPay, 2300);
+});
+
+test('running account starts from an opening balance', () => {
+  const d = C.blankData();
+  d.settings.since = '2026-11-21';
+  const e = emp({ schedule: 'weekly', payDay: 5, rate: 2000, opening: 450 });
+  d.employees.push(e);
+  const a = C.account(d, e, '2026-11-23');
+  assert.equal(a.earned, 450);   // first pay day (27 Nov) has not come yet
+  assert.equal(a.owed, 450);
+  assert.equal(a.nextPay, 2450);
+});

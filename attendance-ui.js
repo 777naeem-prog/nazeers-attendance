@@ -334,115 +334,120 @@
     }
 
     /* ---------- pay ---------- */
-    function viewPay(main) {
-      const staff = activeStaff();
-      const now = C.localToday();
-      const off = ui.payOffset;
-      const results = staff.map((e) => ({ e, r: C.calcPeriod(data, e, C.periodAt(e, now, off), now) }));
-      const total = results.reduce((a, x) => a + x.r.net, 0);
-      const unpaid = results.filter((x) => !x.r.payment);
-      main.innerHTML = `
-        <div class="na-head">
-          <div class="na-daynav">
-            <button type="button" class="na-btn sm" data-a="pay-off" data-n="-1" aria-label="Earlier pay periods">‹</button>
-            <span class="na-chip">${off === 0 ? 'Current pay period' : off === -1 ? 'Last pay period' : off < 0 ? `${-off} periods ago` : `${off} period(s) ahead`}</span>
-            <button type="button" class="na-btn sm" data-a="pay-off" data-n="1" aria-label="Later pay periods">›</button>
-            ${off ? '<button type="button" class="na-btn sm ghost" data-a="pay-now">Back to current</button>' : ''}
-          </div>
-        </div>
-        <h1 class="na-h1">Pay</h1>
-        <div class="na-stats">
-          <div class="na-stat hero"><span>${off === 0 ? 'Owed so far this period' : 'Total for these periods'}</span><b>${money(total)}</b><i>${results.length} employee(s) · ${unpaid.length} not paid yet</i></div>
-          ${results.slice().filter((x) => !x.r.payment).sort((a, b) => a.r.end.localeCompare(b.r.end)).slice(0, 3).map(({ e, r }) => `<div class="na-stat"><span>${esc(e.name)}</span><b>${money(r.net)}</b><i>${r.daysToPay > 1 ? `Pay day in ${r.daysToPay} days — ${fmtDate(r.end, true)}` : r.daysToPay === 1 ? 'Pay day is tomorrow' : r.daysToPay === 0 ? 'Pay day is today' : `Was due ${fmtDate(r.end)}`}</i></div>`).join('')}
-        </div>
-        ${results.length ? results.map(({ e, r }) => payCard(e, r)).join('') : '<section class="na-card"><div class="na-empty"><b>No staff yet.</b><p>Add employees under Staff.</p></div></section>'}
-        <p class="na-hint">Fixed salary: the full salary, less absent days and half days (one day = salary ÷ working days in the period). Days nobody marked are not deducted until you mark them. Daily rate: only days marked Present, Late, Sick or Leave are paid (half days pay half). Advances given during the period come off the pay.</p>`;
+    /* ---------- pay: a running account per person — pay any amount, any day ---------- */
+    function scheduleText(e) {
+      const amt = e.payType === 'daily' ? `${money(num(e.rate))} a day` : e.schedule === 'monthdays' || e.schedule === 'monthly' ? `${money(num(e.rate))} a month`
+        : e.schedule === 'weekly' ? `${money(num(e.rate))} a week` : `${money(num(e.rate))} every two weeks`;
+      return `${amt} · paid ${payDayText(e)}`;
     }
-    function payCard(e, r) {
-      const c = r.counts;
-      const status = r.payment ? `<span class="na-pill ok">Paid ${fmtDate(r.payment.paidOn)}</span>`
-        : r.daysToPay < 0 ? '<span class="na-pill bad">Pay day passed</span>'
-        : r.daysToPay <= 2 ? `<span class="na-pill warn">Pay day ${r.daysToPay === 0 ? 'today' : r.daysToPay === 1 ? 'tomorrow' : 'in 2 days'}</span>`
-        : `<span class="na-pill">Pay day ${fmtDate(r.end)}</span>`;
-      return `<section class="na-card na-pay">
-        <div class="na-pay-head">
-          <div><b>${esc(e.name)}</b><i>${esc(e.role ? e.role + ' · ' : '')}${C.SCHEDULES[e.schedule]} · ${e.payType === 'daily' ? `${money(num(e.rate))} a day` : `${money(num(e.rate))} a period`}</i></div>
-          ${status}
+    /* whole rands without the cents, so the at-a-glance table fits on a phone */
+    const moneyC = (n) => (Math.abs(n - Math.round(n)) < 0.005 ? money(Math.round(n)).replace(/\.00$/, '') : money(n));
+    const owedText = (a) => (a.owed > 0.004 ? moneyC(a.owed) : a.owed < -0.004 ? `${moneyC(-a.owed)} ahead` : 'Paid up ✓');
+    function viewPay(main) {
+      const now = C.localToday();
+      const rows = activeStaff().map((e) => ({ e, a: C.account(data, e, now) }));
+      const t = rows.reduce((x, { a }) => ({ earned: x.earned + a.earned, paid: x.paid + a.paid, owed: x.owed + Math.max(0, a.owed), month: x.month + a.paidThisMonth }), { earned: 0, paid: 0, owed: 0, month: 0 });
+      const next = rows.filter(({ a }) => a.current).sort((x, y) => x.a.current.end.localeCompare(y.a.current.end))[0];
+      main.innerHTML = `
+        <h1 class="na-h1">Pay</h1>
+        ${rows.length ? `<section class="na-card na-totals">
+          <div class="na-card-head"><h3 class="na-h3">Everyone at a glance</h3><span class="na-hint">Tap a name for details</span></div>
+          <div class="na-scroll"><table class="na-sum"><thead><tr><th>Name</th><th class="r">Earned</th><th class="r">Paid</th><th class="r">To pay</th></tr></thead><tbody>
+          ${rows.map(({ e, a }) => {
+            const pct = a.earned > 0 ? Math.min(100, Math.round((a.paid / a.earned) * 100)) : a.paid > 0 ? 100 : 0;
+            return `<tr data-a="pay-jump" data-e="${e.id}"><td><b>${esc(e.name)}</b><span class="na-bar" title="${pct}% paid"><i style="width:${pct}%"></i></span></td>
+              <td class="r">${moneyC(a.earned)}</td><td class="r">${moneyC(a.paid)}</td><td class="r ${a.owed > 0.004 ? 'owe' : 'ok'}"><b>${owedText(a)}</b></td></tr>`;
+          }).join('')}</tbody>
+          <tfoot><tr><td>Total</td><td class="r">${moneyC(t.earned)}</td><td class="r">${moneyC(t.paid)}</td><td class="r owe">${moneyC(t.owed)}</td></tr></tfoot></table></div>
+          <p class="na-hint na-pad-x">Earned = every pay day so far${data.settings.since ? `, since ${fmtDate(data.settings.since)}` : ''}. Paid = everything handed over, on pay day or in between.</p>
+        </section>
+        <div class="na-stats na-stats-pay">
+          <div class="na-stat hero"><span>Still to pay now</span><b>${money(t.owed)}</b><i>${rows.filter(({ a }) => a.owed > 0.004).length} of ${rows.length} people owed money</i></div>
+          <div class="na-stat"><span>Paid this month</span><b>${money(t.month)}</b><i>${C.MONTHS[+now.slice(5, 7) - 1]} ${now.slice(0, 4)}</i></div>
+          ${next ? `<div class="na-stat"><span>Next pay day</span><b>${fmtDate(next.a.current.end).replace(/ \d{4}$/, '')}</b><i>${esc(next.e.name)} · ${money(next.a.nextPay)}</i></div>` : ''}
         </div>
-        <div class="na-pay-body">
-          <div>
-            <div class="na-period">${fmtDate(r.start)} – ${fmtDate(r.end)}</div>
-            <div class="na-counts">
-              <span class="s-P">Present <b>${c.P + c.L}</b></span>${c.L ? `<span class="s-L">Late <b>${c.L}</b></span>` : ''}<span class="s-H">Half <b>${c.H}</b></span><span class="s-A">Absent <b>${c.A}</b></span>${c.S ? `<span class="s-S">Sick <b>${c.S}</b></span>` : ''}${c.V ? `<span class="s-V">Leave <b>${c.V}</b></span>` : ''}${c.extra ? `<span>Extra days <b>${c.extra}</b></span>` : ''}${c.otHours ? `<span>Overtime <b>${round2(c.otHours)} h</b></span>` : ''}
-            </div>
-            ${c.unrecorded ? `<p class="na-warn">${c.unrecorded} working day(s) not marked yet: ${r.unrecordedDates.slice(0, 6).map((d) => `<a href="#" data-a="goto-day" data-d="${d}">${fmtDate(d, true)}</a>`).join(', ')}${r.unrecordedDates.length > 6 ? '…' : ''}</p>` : ''}
-            ${c.upcoming && !r.payment ? `<p class="na-hint">${c.upcoming} working day(s) still to come — the amount is ${e.payType === 'daily' ? 'so far' : 'if nobody is absent'}.</p>` : ''}
-          </div>
-          <table class="na-lines">${r.lines.map((l) => `<tr><td>${esc(l.label)}</td><td class="${l.amount < 0 ? 'neg' : ''}">${money(l.amount)}</td></tr>`).join('')}
-            <tr class="tot"><td>${r.payment ? 'Paid' : 'To pay'}</td><td>${money(r.payment ? r.payment.net : r.net)}</td></tr></table>
+        ${rows.map(({ e, a }) => payCard(e, a)).join('')}` : '<section class="na-card"><div class="na-empty"><b>No staff yet.</b><p>Add your workers under Staff.</p></div></section>'}
+        <p class="na-hint">Pay any amount on any day — on pay day, part of it, or in between. It all comes off what they have earned, and paying early simply lowers the next pay. Fixed salary: absent and half days come off at salary ÷ working days in the period. Daily rate: only days marked Present, Late, Sick or Leave are paid.</p>`;
+    }
+    function payCard(e, a) {
+      const r = a.current;
+      const pct = a.earned > 0 ? Math.min(100, Math.round((a.paid / a.earned) * 100)) : a.paid > 0 ? 100 : 0;
+      const c = r ? r.counts : null;
+      const pill = a.owed > 0.004 ? `<span class="na-pill bad">To pay ${money(a.owed)}</span>` : a.owed < -0.004 ? `<span class="na-pill">${money(-a.owed)} ahead</span>` : '<span class="na-pill ok">Paid up ✓</span>';
+      return `<section class="na-card na-pay" id="pay-${e.id}">
+        <div class="na-pay-head"><div><b>${esc(e.name)}</b><i>${esc(e.role ? e.role + ' · ' : '')}${scheduleText(e)}</i></div>${pill}</div>
+        <div class="na-acct">
+          <div><span>Earned</span><b>${money(a.earned)}</b></div>
+          <div><span>Paid</span><b>${money(a.paid)}</b></div>
+          <div class="${a.owed > 0.004 ? 'owe' : 'ok'}"><span>${a.owed < -0.004 ? 'Paid ahead' : 'To pay now'}</span><b>${money(Math.abs(a.owed))}</b></div>
         </div>
+        <div class="na-pad-x"><span class="na-bar big" title="${pct}% of earnings paid"><i style="width:${pct}%"></i></span></div>
+        ${r ? `<p class="na-next na-pad-x">Next pay day <b>${fmtDate(r.end, true)}</b>${r.daysToPay === 0 ? ' (today)' : r.daysToPay === 1 ? ' (tomorrow)' : ` (in ${r.daysToPay} days)`}: <b>${money(a.nextPay)}</b>
+          <span class="na-hint">${a.owed > 0.004 ? `${money(a.owed)} still owed + ` : a.owed < -0.004 ? `${money(r.earned)} this period − ${money(-a.owed)} paid ahead` : ''}${a.owed > 0.004 || Math.abs(a.owed) <= 0.004 ? `${money(r.earned)} this period${c.upcoming ? (e.payType === 'daily' ? ' so far' : ', if nobody is absent') : ''}` : ''}</span></p>` : ''}
+        ${r ? `<details class="na-more-info na-pad-x"><summary>This period: ${fmtDate(r.start)} – ${fmtDate(r.end)}</summary>
+          <div class="na-counts"><span class="s-P">Present <b>${c.P + c.L}</b></span>${c.L ? `<span class="s-L">Late <b>${c.L}</b></span>` : ''}<span class="s-H">Half <b>${c.H}</b></span><span class="s-A">Absent <b>${c.A}</b></span>${c.S ? `<span class="s-S">Sick <b>${c.S}</b></span>` : ''}${c.V ? `<span class="s-V">Leave <b>${c.V}</b></span>` : ''}${c.extra ? `<span>Extra days <b>${c.extra}</b></span>` : ''}${c.otHours ? `<span>Overtime <b>${round2(c.otHours)} h</b></span>` : ''}</div>
+          ${c.unrecorded ? `<p class="na-warn">${c.unrecorded} working day(s) not marked yet: ${r.unrecordedDates.slice(0, 6).map((d) => `<a href="#" data-a="goto-day" data-d="${d}">${fmtDate(d, true)}</a>`).join(', ')}${r.unrecordedDates.length > 6 ? '…' : ''}</p>` : ''}
+          <table class="na-lines">${r.lines.filter((l) => l.kind !== 'adv').map((l) => `<tr><td>${esc(l.label)}</td><td class="${l.amount < 0 ? 'neg' : ''}">${money(l.amount)}</td></tr>`).join('')}
+            <tr class="tot"><td>Earned this period</td><td>${money(r.earned)}</td></tr></table></details>` : ''}
+        <details class="na-more-info na-pad-x"><summary>Payments (${a.payments.length})${a.payments.length ? ` · last ${fmtDate(a.payments[0].date)}` : ''}</summary>
+          ${a.payments.length ? `<table class="na-lines">${a.payments.slice(0, 40).map((x) => `<tr><td>${fmtDate(x.date, true)}<span class="na-hint"> · ${esc(x.method || 'Paid')}${x.note ? ' · ' + esc(x.note) : ''}</span></td><td>${money(x.amount)}</td><td class="na-del"><button type="button" class="na-x sm" data-a="del-pay" data-id="${x.id}" data-k="${x.kind}" aria-label="Remove this payment">×</button></td></tr>`).join('')}</table>` : '<p class="na-hint">Nothing paid yet.</p>'}
+        </details>
         <div class="na-pay-foot">
-          <button type="button" class="na-btn sm" data-a="advance" data-e="${e.id}">Give advance</button>
-          <button type="button" class="na-btn sm" data-a="slip" data-e="${e.id}" data-s="${r.start}">Print pay slip</button>
-          <button type="button" class="na-btn sm wa" data-a="share-slip" data-e="${e.id}" data-s="${r.start}">WhatsApp pay slip</button>
-          ${r.payment ? `<button type="button" class="na-btn sm ghost" data-a="unpay" data-p="${r.payment.id}">Undo paid</button>` : `<button type="button" class="na-btn sm primary" data-a="pay" data-e="${e.id}" data-s="${r.start}">Mark as paid</button>`}
+          <button type="button" class="na-btn sm" data-a="slip" data-e="${e.id}">Pay slip</button>
+          <button type="button" class="na-btn sm wa" data-a="share-slip" data-e="${e.id}">WhatsApp</button>
+          <button type="button" class="na-btn primary" data-a="pay" data-e="${e.id}">Pay ${esc(e.name.split(' ')[0])}</button>
         </div>
       </section>`;
     }
-    function resultFor(empId, start) {
-      const e = empById(empId);
-      return { e, r: C.calcPeriod(data, e, C.periodFor(e, start), C.localToday()) };
+    /* the period a pay slip is for: the last one whose pay day has come, else the current one */
+    function slipFor(empId) {
+      const e = empById(empId), a = C.account(data, e, C.localToday());
+      return { e, a, r: a.periods[a.periods.length - 1] || a.current };
     }
-    function payModal(empId, start) {
-      const { e, r } = resultFor(empId, start);
-      const warn = r.counts.unrecorded ? `<p class="na-warn">${r.counts.unrecorded} working day(s) in this period are not marked yet.</p>` : '';
-      modal(`Pay ${e.name}`, `${warn}
-        <p>${fmtDate(r.start)} – ${fmtDate(r.end)}. Worked out: <b>${money(r.net)}</b></p>
-        <div class="na-form g2">
-          ${field('Amount paid', 'net', round2(r.net), { type: 'number', req: true })}
-          ${field('Date paid', 'paidOn', C.localToday(), { type: 'date' })}
+    function payModal(empId) {
+      const e = empById(empId), a = C.account(data, e, C.localToday());
+      const sugg = [];
+      if (a.owed > 0.004) sugg.push(['Still owed', a.owed]);
+      if (a.current && a.nextPay > 0.004 && Math.abs(a.nextPay - a.owed) > 0.004) sugg.push([`Up to ${fmtDate(a.current.end).replace(/ \d{4}$/, '')}`, a.nextPay]);
+      modal(`Pay ${e.name}`, `
+        <div class="na-acct small"><div><span>Earned</span><b>${money(a.earned)}</b></div><div><span>Paid</span><b>${money(a.paid)}</b></div><div class="${a.owed > 0.004 ? 'owe' : 'ok'}"><span>${a.owed < -0.004 ? 'Paid ahead' : 'To pay now'}</span><b>${money(Math.abs(a.owed))}</b></div></div>
+        ${sugg.length ? `<div class="na-chips">${sugg.map(([l, v]) => `<button type="button" class="na-btn sm" data-a="pay-fill" data-v="${round2(v)}">${l}: ${money(v)}</button>`).join('')}</div>` : ''}
+        <div class="na-form g2" style="margin-top:12px">
+          ${field('Amount', 'net', a.owed > 0.004 ? round2(a.owed) : '', { type: 'number', req: true, ph: '0.00' })}
+          ${field('Date', 'paidOn', C.localToday(), { type: 'date' })}
           ${field('How', 'method', 'Cash', { options: [['Cash', 'Cash'], ['Bank transfer', 'Bank transfer'], ['EFT', 'EFT'], ['Other', 'Other']] })}
-          ${field('Note (optional)', 'note', '')}
-        </div>`, (f) => {
-        data.payments.push({ id: C.uid(), empId: e.id, start: r.start, end: r.end, paidOn: f.paidOn || C.localToday(), method: f.method, note: f.note, net: round2(num(f.net)), calculated: r.net, slip: { lines: r.lines, counts: r.counts } });
-        save(); toast(`${e.name} marked as paid`); render();
-      }, 'Mark as paid');
-    }
-    function advanceModal(empId) {
-      const e = empById(empId);
-      const list = data.advances.filter((a) => a.empId === empId).sort((a, b) => b.date.localeCompare(a.date)).slice(0, 8);
-      modal(`Advance for ${e.name}`, `
-        <div class="na-form g2">
-          ${field('Amount', 'amount', '', { type: 'number', req: true })}
-          ${field('Date given', 'date', C.localToday(), { type: 'date' })}
-          ${field('Note (optional)', 'note', '', { cls: 'span2' })}
+          ${field('Note (optional)', 'note', '', { ph: 'e.g. part of wages, advance' })}
         </div>
-        <p class="na-hint">It is taken off the pay for the period the date falls in.</p>
-        ${list.length ? `<h3 class="na-h3">Recent advances</h3><table class="na-lines">${list.map((a) => `<tr><td>${fmtDate(a.date)}${a.note ? ' — ' + esc(a.note) : ''}</td><td>${money(num(a.amount))}</td><td><button type="button" class="na-x sm" data-a="del-adv" data-id="${a.id}" aria-label="Remove advance">×</button></td></tr>`).join('')}</table>` : ''}`,
-      (f) => {
-        if (num(f.amount) <= 0) { toast('Enter an amount'); return false; }
-        data.advances.push({ id: C.uid(), empId, date: f.date || C.localToday(), amount: round2(num(f.amount)), note: f.note });
-        save(); toast('Advance recorded'); render();
-      }, 'Record advance');
+        <p class="na-hint">Any amount, any day: part of the wages, the full amount, or money in between pay days. It comes off what is owed; paying more than is owed now lowers the next pay.</p>`, (f) => {
+        if (num(f.net) <= 0) { toast('Enter an amount'); return false; }
+        data.payments.push({ id: C.uid(), empId: e.id, paidOn: f.paidOn || C.localToday(), method: f.method, note: (f.note || '').trim(), net: round2(num(f.net)) });
+        save(); toast(`${money(num(f.net))} paid to ${e.name}`); render();
+        const card = el.querySelector('#pay-' + e.id); if (card) card.scrollIntoView({ block: 'nearest' });
+      }, 'Record payment');
     }
 
     /* pay slip, printed on its own page */
-    function printSlip(empId, start) {
-      const { e, r } = resultFor(empId, start);
+    function printSlip(empId) {
+      const { e, a, r } = slipFor(empId);
+      if (!r) { toast('No pay period yet'); return; }
       const c = r.counts, s = data.settings;
-      const net = r.payment ? r.payment.net : r.net;
+      const paidIn = a.payments.filter((x) => x.date >= r.start && x.date <= C.addDays(r.end, 6)).slice().reverse();
       printHTML(`<div class="nap-slip">
         <header><div><h1>${esc(s.business)}</h1>${s.phone ? `<p>${esc(s.phone)}</p>` : ''}</div><div class="r"><h2>Pay slip</h2><p>${fmtDate(r.start)} – ${fmtDate(r.end)}</p></div></header>
         <table class="kv"><tr><th>Employee</th><td>${esc(e.name)}</td><th>Role</th><td>${esc(e.role || '—')}</td></tr>
-          <tr><th>ID no</th><td>${esc(e.idNo || '—')}</td><th>Paid</th><td>${C.SCHEDULES[e.schedule]}</td></tr></table>
+          <tr><th>ID no</th><td>${esc(e.idNo || '—')}</td><th>Paid</th><td>${esc(payDayText(e))}</td></tr></table>
         <h3>Attendance</h3>
         <table class="kv"><tr><th>Working days</th><td>${c.expected}</td><th>Present</th><td>${c.P + c.L}${c.L ? ` (late ${c.L})` : ''}</td></tr>
           <tr><th>Half days</th><td>${c.H}</td><th>Absent</th><td>${c.A}</td></tr>
           <tr><th>Sick / leave</th><td>${c.S} / ${c.V}</td><th>Overtime</th><td>${round2(c.otHours)} h</td></tr></table>
-        <h3>Pay</h3>
-        <table class="lines">${r.lines.map((l) => `<tr><td>${esc(l.label)}</td><td>${money(l.amount)}</td></tr>`).join('')}
-          ${r.payment && Math.abs(r.payment.net - r.net) > 0.004 ? `<tr><td>Adjusted when paid${r.payment.note ? ' — ' + esc(r.payment.note) : ''}</td><td>${money(r.payment.net - r.net)}</td></tr>` : ''}
-          <tr class="tot"><td>${r.payment ? `Paid ${fmtDate(r.payment.paidOn)} · ${esc(r.payment.method)}` : 'Amount to pay'}</td><td>${money(net)}</td></tr></table>
+        <h3>Earned</h3>
+        <table class="lines">${r.lines.filter((l) => l.kind !== 'adv').map((l) => `<tr><td>${esc(l.label)}</td><td>${money(l.amount)}</td></tr>`).join('')}
+          <tr class="tot"><td>Earned this period</td><td>${money(round2(r.gross - r.latePen))}</td></tr></table>
+        <h3>Paid</h3>
+        <table class="lines">${paidIn.map((x) => `<tr><td>${fmtDate(x.date)} · ${esc(x.method || 'Paid')}${x.note ? ' — ' + esc(x.note) : ''}</td><td>${money(x.amount)}</td></tr>`).join('') || '<tr><td>Nothing paid in this period</td><td></td></tr>'}</table>
+        <h3>Account</h3>
+        <table class="lines"><tr><td>Earned in total</td><td>${money(a.earned)}</td></tr><tr><td>Paid in total</td><td>${money(a.paid)}</td></tr>
+          <tr class="tot"><td>${a.owed < -0.004 ? 'Paid ahead' : 'Still to pay'}</td><td>${money(Math.abs(a.owed))}</td></tr></table>
         <div class="sign"><div>Employer</div><div>Employee — received</div></div>
       </div>`, `Pay slip ${e.name} ${r.end}`);
     }
@@ -477,11 +482,12 @@
             <td>${money(num(e.rate))} <i>${e.payType === 'daily' ? 'a day' : 'salary'}</i></td>
             <td>${C.SCHEDULES[e.schedule]}<i>${payDayText(e)}</i></td>
             <td>${e.active === false ? '—' : fmtDate(C.nextPayDay(e, now), true)}</td>
-            <td class="r"><button type="button" class="na-btn sm" data-a="advance" data-e="${e.id}">Advance</button></td></tr>`).join('')}
-          </tbody></table>` : `<div class="na-empty"><b>Add your staff to start.</b><p>For each person: their name, how much they earn, and when they are paid (monthly, every two weeks or weekly). Then mark attendance each day instead of sending it on WhatsApp — pay works itself out.</p><button type="button" class="na-btn primary" data-a="emp">+ Add employee</button></div>`}</section>`;
+            <td class="r"><button type="button" class="na-btn sm" data-a="pay" data-e="${e.id}">Pay</button></td></tr>`).join('')}
+          </tbody></table>` : `<div class="na-empty"><b>Add your staff to start.</b><p>For each person: their name, how much they earn, and when they are paid (monthly, on set dates like the 10th, 20th and 30th, every two weeks or weekly). Then mark attendance each day instead of sending it on WhatsApp — pay works itself out.</p><button type="button" class="na-btn primary" data-a="emp">+ Add employee</button></div>`}</section>`;
     }
     function payDayText(e) {
       if (e.schedule === 'monthly') return num(e.payDay) >= 31 ? 'on the last day of the month' : `on the ${ordinal(num(e.payDay))}`;
+      if (e.schedule === 'monthdays') { const d = C.payDaysOf(e).map((x) => (x >= 31 ? 'last day' : ordinal(x))); return 'on the ' + (d.length > 1 ? d.slice(0, -1).join(', ') + ' & ' + d[d.length - 1] : d[0]); }
       return `on ${C.DAY_NAMES[num(e.payDay) % 7]}s`;
     }
     const ordinal = (n) => n + (n % 10 === 1 && n % 100 !== 11 ? 'st' : n % 10 === 2 && n % 100 !== 12 ? 'nd' : n % 10 === 3 && n % 100 !== 13 ? 'rd' : 'th');
@@ -496,16 +502,18 @@
           ${field('Job / role', 'role', e.role, { ph: 'e.g. Counter sales, Driver' })}
           ${field('Phone', 'phone', e.phone, { type: 'tel' })}
           ${field('ID number (optional)', 'idNo', e.idNo)}
-          ${field('Start date', 'startDate', e.startDate, { type: 'date' })}
+          ${field('Started on (only for someone new)', 'startDate', e.startDate, { type: 'date', hint: 'Leave empty if they already worked here.' })}
           ${field('Paid', 'schedule', e.schedule, { options: Object.entries(C.SCHEDULES) })}
           ${field('How pay is worked out', 'payType', e.payType, { options: Object.entries(C.PAY_TYPES), cls: 'span2' })}
           ${field(e.payType === 'daily' ? 'Rate per day' : 'Salary per pay period', 'rate', num(e.rate) || '', { type: 'number', req: true, hint: 'Monthly → the monthly salary. Weekly → the weekly wage. Daily rate → the amount for one day.' })}
           <label class="na-fld" data-pd="monthly" ${e.schedule === 'monthly' ? '' : 'hidden'}><span>Pay day</span><select name="payDayM">${monthDays.map(([v, l]) => `<option value="${v}" ${e.schedule === 'monthly' && +e.payDay === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
-          <label class="na-fld" data-pd="week" ${e.schedule === 'monthly' ? 'hidden' : ''}><span>Pay day</span><select name="payDayW">${days.map(([v, l]) => `<option value="${v}" ${e.schedule !== 'monthly' && +e.payDay === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+          <label class="na-fld" data-pd="monthdays" ${e.schedule === 'monthdays' ? '' : 'hidden'}><span>Pay dates each month</span><input name="payDays" inputmode="numeric" value="${esc(C.payDaysOf(e).join(', '))}" placeholder="10, 20, 30"><i>Days of the month, e.g. 10, 20, 30. The monthly salary is split evenly over them; 30 or 31 means month-end in short months.</i></label>
+          <label class="na-fld" data-pd="week" ${e.schedule === 'weekly' || e.schedule === 'fortnightly' ? '' : 'hidden'}><span>Pay day</span><select name="payDayW">${days.map(([v, l]) => `<option value="${v}" ${(e.schedule === 'weekly' || e.schedule === 'fortnightly') && +e.payDay === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
           <label class="na-fld span2" data-pd="fortnightly" ${e.schedule === 'fortnightly' ? '' : 'hidden'}><span>One recent or upcoming pay date</span><input type="date" name="anchor" value="${esc(e.anchor)}"><i>So the app knows which week the two-week cycle ends on.</i></label>
           <div class="na-fld span2"><span>Normal working days</span><div class="na-days">${days.map(([v, l]) => `<label><input type="checkbox" name="workDays" value="${v}" ${(e.workDays || []).includes(v) ? 'checked' : ''}>${l.slice(0, 3)}</label>`).join('')}</div></div>
           ${field('Overtime pay per hour', 'otRate', num(e.otRate) || '', { type: 'number', ph: '0' })}
           ${field('Deduct per late arrival', 'lateDeduct', num(e.lateDeduct) || '', { type: 'number', ph: '0 = just count it' })}
+          ${field('Already owed to them when you started (optional)', 'opening', num(e.opening) || '', { ph: '0', cls: 'span2', hint: 'Wages from before you started using the app that are still unpaid. Use a minus sign if they owe the shop (e.g. −500).' })}
           ${id ? `<label class="na-check span2"><input type="checkbox" name="left" ${e.active === false ? 'checked' : ''}> No longer works here (kept in old records, hidden from the register)</label>` : ''}
           ${field('Notes', 'notes', e.notes, { area: 2, cls: 'span2' })}
         </div>
@@ -519,6 +527,7 @@
           name: f.name.trim(), role: f.role.trim(), phone: f.phone.trim(), idNo: f.idNo.trim(), startDate: f.startDate || '',
           schedule: f.schedule, payType: f.payType, rate: round2(num(f.rate)),
           payDay: f.schedule === 'monthly' ? num(f.payDayM) : num(f.payDayW), anchor: f.schedule === 'fortnightly' ? f.anchor || '' : '',
+          payDays: C.payDaysOf({ payDays: f.payDays }), opening: round2(parseFloat(String(f.opening || '0').replace(/[−–]/g, '-')) || 0),
           workDays: wd, otRate: round2(num(f.otRate)), lateDeduct: round2(num(f.lateDeduct)), notes: f.notes || '',
           active: !f.left, endDate: f.left ? rec.endDate || C.localToday() : '',
         });
@@ -529,9 +538,10 @@
       const sync = () => {
         const sch = form.schedule.value;
         form.querySelector('[data-pd="monthly"]').hidden = sch !== 'monthly';
-        form.querySelector('[data-pd="week"]').hidden = sch === 'monthly';
+        form.querySelector('[data-pd="week"]').hidden = sch !== 'weekly' && sch !== 'fortnightly';
+        form.querySelector('[data-pd="monthdays"]').hidden = sch !== 'monthdays';
         form.querySelector('[data-pd="fortnightly"]').hidden = sch !== 'fortnightly';
-        form.rate.closest('.na-fld').firstElementChild.textContent = form.payType.value === 'daily' ? 'Rate per day' : sch === 'monthly' ? 'Salary per month' : sch === 'weekly' ? 'Wage per week' : 'Pay per two weeks';
+        form.rate.closest('.na-fld').firstElementChild.textContent = form.payType.value === 'daily' ? 'Rate per day' : sch === 'monthly' || sch === 'monthdays' ? 'Salary per month' : sch === 'weekly' ? 'Wage per week' : 'Pay per two weeks';
       };
       form.addEventListener('change', sync); sync();
     }
@@ -630,21 +640,20 @@
         save(); render();
       },
       'print-month': () => printMonth(),
-      'pay-off': (t) => { ui.payOffset += +t.dataset.n; render(); },
-      'pay-now': () => { ui.payOffset = 0; render(); },
-      pay: (t) => payModal(t.dataset.e, t.dataset.s),
-      unpay: (t) => {
-        if (!confirm('Undo this payment? The period shows as not paid again.')) return;
-        data.payments = data.payments.filter((p) => p.id !== t.dataset.p); save(); render();
+      pay: (t) => payModal(t.dataset.e),
+      'pay-fill': (t) => { const i = el.querySelector('.na-modal [name=net]'); if (i) { i.value = t.dataset.v; i.focus(); } },
+      'pay-jump': (t) => { const c = el.querySelector('#pay-' + t.dataset.e); if (c) c.scrollIntoView({ behavior: 'smooth', block: 'start' }); },
+      'del-pay': (t) => {
+        if (!confirm('Remove this payment? The amount goes back to "to pay".')) return;
+        if (t.dataset.k === 'adv') data.advances = data.advances.filter((x) => x.id !== t.dataset.id);
+        else data.payments = data.payments.filter((x) => x.id !== t.dataset.id);
+        save(); render();
       },
-      slip: (t) => printSlip(t.dataset.e, t.dataset.s),
-      'share-slip': (t) => { const { e, r } = resultFor(t.dataset.e, t.dataset.s); const txt = C.payText(data, e, r, money); share(txt); },
-      advance: (t) => advanceModal(t.dataset.e),
-      'del-adv': (t) => {
-        if (!confirm('Remove this advance?')) return;
-        const a = data.advances.find((x) => x.id === t.dataset.id);
-        data.advances = data.advances.filter((x) => x.id !== t.dataset.id); save(); render(); advanceModal(a.empId);
-      },
+
+      slip: (t) => printSlip(t.dataset.e),
+      'share-slip': (t) => { const { e, a, r } = slipFor(t.dataset.e); if (!r) return; share(C.payText(data, e, r, money, a)); },
+      advance: (t) => payModal(t.dataset.e),
+
       emp: (t) => employeeModal(t.dataset.id),
       'del-emp': (t) => {
         const e = empById(t.dataset.id);

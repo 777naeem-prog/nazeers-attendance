@@ -188,6 +188,42 @@ p.na-center { display: block; }
 .na-pill.warn { background: rgba(217, 119, 6, .15); color: #b45309; }
 .na-pill.bad { background: rgba(225, 29, 72, .13); color: var(--c-A); }
 
+/* pay: everyone at a glance, and a running account per person */
+.na-pad-x { padding-left: 18px; padding-right: 18px; }
+.na-card-head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; padding: 16px 18px 4px; }
+.na-card-head .na-h3 { margin: 0; }
+.na-card-head .na-hint { margin: 0; font-size: 12.5px; }
+.na-sum { width: 100%; border-collapse: collapse; font-size: 14.5px; }
+.na-sum th { text-align: left; font-size: 12px; font-weight: 650; color: var(--na-muted); text-transform: uppercase; letter-spacing: .05em; padding: 8px 18px; border-bottom: 1px solid var(--na-line); }
+.na-sum td { padding: 11px 18px; border-bottom: 1px solid var(--na-line); white-space: nowrap; }
+.na-sum th.r, .na-sum td.r { text-align: right; }
+.na-sum tbody tr { cursor: pointer; transition: background .15s; }
+.na-sum tbody tr:hover { background: rgba(255, 255, 255, .55); }
+.na-sum td b { font-weight: 650; }
+.na-sum td:first-child { display: grid; gap: 5px; min-width: 120px; }
+.na-sum td.owe, .na-acct .owe b { color: var(--c-A); }
+.na-sum td.ok, .na-acct .ok b { color: var(--c-P); }
+.na-sum tfoot td { font-weight: 750; border-bottom: 0; background: rgba(255, 255, 255, .45); }
+.na-bar { display: block; height: 6px; border-radius: 99px; background: rgba(15, 23, 42, .08); overflow: hidden; }
+.na-bar i { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #22c55e, #16a34a); }
+.na-bar.big { height: 9px; margin: 2px 0 8px; }
+.na-acct { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; padding: 12px 18px 8px; }
+.na-acct > div { background: rgba(255, 255, 255, .55); border: 1px solid var(--na-rim); border-radius: 16px; padding: 10px 12px; display: grid; gap: 2px; }
+.na-acct span { font-size: 12px; color: var(--na-muted); font-weight: 600; }
+.na-acct b { font-size: 19px; letter-spacing: -.02em; }
+.na-acct.small { padding: 0; }
+.na-acct.small b { font-size: 16px; }
+.na-next { margin: 2px 0 6px; font-size: 14.5px; }
+.na-next .na-hint { display: block; margin: 2px 0 0; font-size: 12.5px; }
+.na-more-info { border-top: 1px solid var(--na-line); padding-top: 10px; padding-bottom: 10px; }
+.na-more-info summary { cursor: pointer; font-weight: 650; font-size: 14px; color: var(--na-accent); list-style: none; }
+.na-more-info summary::-webkit-details-marker { display: none; }
+.na-more-info summary::before { content: '▸ '; }
+.na-more-info[open] summary::before { content: '▾ '; }
+.na-more-info .na-counts, .na-more-info .na-lines { margin-top: 10px; }
+.na-del { width: 36px; }
+.na-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+
 /* staff list */
 .na-tbl { width: 100%; border-collapse: collapse; }
 .na-tbl th { text-align: left; font-size: 12.5px; font-weight: 600; color: var(--na-muted); padding: 12px 18px 8px; border-bottom: 1px solid var(--na-line); }
@@ -259,6 +295,20 @@ p.na-center { display: block; }
   .na-row { grid-template-columns: minmax(0, 1fr); padding: 13px 12px 12px; }
   .na-seg button { min-height: 50px; font-size: 13px; }
   .na-pay-body { grid-template-columns: 1fr; }
+  .na-acct { gap: 6px; padding: 12px 12px 8px; }
+  .na-acct b { font-size: 16px; }
+  .na-pad-x { padding-left: 12px; padding-right: 12px; }
+  .na-sum { font-size: 13.5px; }
+  .na-sum td, .na-sum th { padding-left: 8px; padding-right: 8px; }
+  .na-sum td:first-child, .na-sum th:first-child { padding-left: 14px; }
+  .na-sum td:last-child, .na-sum th:last-child { padding-right: 14px; }
+  .na-sum td:first-child { min-width: 0; white-space: normal; }
+  .na-sum th { font-size: 10.5px; }
+  .na-pay-foot .na-btn.primary { flex: 1 1 100%; }
+  .na-stats-pay { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+  .na-stats-pay .na-stat { padding: 11px 11px; border-radius: 18px; }
+  .na-stats-pay .na-stat b { font-size: 16.5px; }
+  .na-stats-pay .na-stat span, .na-stats-pay .na-stat i { font-size: 11.5px; }
   .na-form.g2 { grid-template-columns: 1fr; }
   .na-tbl th:nth-child(3), .na-tbl td:nth-child(3) { display: none; }
   .na-modal-back { place-items: end center; padding: 0; }

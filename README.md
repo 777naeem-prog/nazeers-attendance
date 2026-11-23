@@ -9,14 +9,16 @@ Open **https://777naeem-prog.github.io/nazeers-attendance/** — see *On the pho
 1. **Staff**: add each employee with their name, role, pay and how pay is worked out:
    - **Fixed salary**: a set amount per pay period. Absent days and half days are deducted at *salary ÷ working days in the period*.
    - **Daily rate**: paid for each day marked Present, Late, Sick or Leave. A half day pays half.
-   - **Paid**: monthly (pick the pay day, e.g. the 25th or the last day), every two weeks (pick the weekday and one real pay date), or weekly (pick the weekday).
+   - **Paid**: monthly (pick the pay day, e.g. the 25th or the last day), **on set dates each month** (e.g. `10, 20, 30` — the monthly salary is split evenly over them; 30/31 means month-end in short months), every two weeks (pick the weekday and one real pay date), or weekly (pick the weekday).
+   - *Started on*: only for someone new; leave it empty for people who already worked there. *Already owed to them*: wages from before the app that are still unpaid (a minus amount if they owe the shop).
    - Also: normal working days (Mon–Sat by default), overtime pay per hour, and an optional amount deducted for each late arrival.
 2. **Daily register**: one screen per day. Tap a status for each person, or press *Mark the rest present*, then add any overtime hours or a note. *Send on WhatsApp* shares the day's register as a message, so the staff group can still see it. *Shop closed* marks public holidays and other closed days: nobody is counted absent, salaries are not reduced, and daily-rate staff are not paid that day.
 3. **Month sheet**: the whole month as a grid with totals per person. Tap a square to change it. A dot means a working day that has not been marked. You can print it.
-4. **Pay**: each employee's current pay period with a full breakdown, the amount to pay and how many days until pay day. Use the arrows to look at earlier periods.
-   - *Give advance*: money handed over early is taken off that period's pay.
-   - *Mark as paid*: records the amount, the date and how it was paid (the amount can be adjusted).
-   - *Print pay slip* or *WhatsApp pay slip* gives the employee a slip.
+4. **Pay** — a running account per person, so money can be paid **any day, in any amount** (a sliding scale):
+   - **Everyone at a glance** at the top: per person *Earned* (every pay day so far), *Paid* (everything handed over, on pay day or in between) and *To pay*, with a bar showing how much has been paid, and the totals for everyone.
+   - Each person's card: Earned · Paid · To pay now, the next pay day and what will be due then (paying ahead lowers it), this period's attendance and how the amount was worked out, and every payment (tap × to remove a mistake).
+   - *Pay*: any amount, any date, cash or bank, with an optional note — part of the wages, the full amount, or money in between pay days. Shortcuts fill in "still owed" or "up to the next pay day".
+   - *Pay slip* (print) or *WhatsApp*: the last pay period — what was earned, what was paid, and the balance.
 5. **Settings**: business name, currency, the date attendance started being kept here, a list of closed days, and **backups**.
 
 ### Statuses

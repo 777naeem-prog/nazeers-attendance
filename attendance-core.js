@@ -21,7 +21,7 @@
   };
   const STATUS_ORDER = ['P', 'L', 'H', 'A', 'S', 'V', 'O'];
 
-  const SCHEDULES = { monthly: 'Monthly', fortnightly: 'Every two weeks', weekly: 'Weekly' };
+  const SCHEDULES = { monthly: 'Monthly', monthdays: 'Set dates each month', fortnightly: 'Every two weeks', weekly: 'Weekly' };
   const PAY_TYPES = { salary: 'Fixed salary per pay period', daily: 'Daily rate (paid per day worked)' };
   const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
   const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -63,9 +63,11 @@
 
   function blankEmployee() {
     return {
-      id: '', name: '', phone: '', role: '', idNo: '', startDate: localToday(), endDate: '', active: true,
+      id: '', name: '', phone: '', role: '', idNo: '', startDate: '', endDate: '', active: true, // startDate empty = already working here
       payType: 'salary', rate: 0, schedule: 'monthly',
       payDay: 25,            // monthly: day of the month (31 = last day). weekly / fortnightly: 0 Sun … 6 Sat
+      payDays: [10, 20, 30], // set dates each month: the days of the month they are paid (31 = last day)
+      opening: 0,            // already owed to them (+) or owed by them (−) when the app was started
       anchor: '',            // fortnightly: any one real pay date, so the two-week cycle lines up
       workDays: [1, 2, 3, 4, 5, 6],
       otRate: 0,             // paid per overtime hour
@@ -113,6 +115,17 @@
   }
 
   /* ---------- pay periods ---------- */
+  /* the pay days of a 'set dates each month' schedule, e.g. [10, 20, 30] (accepts "10, 20, 30") */
+  function payDaysOf(emp) {
+    const raw = Array.isArray(emp.payDays) ? emp.payDays : String(emp.payDays || '').split(/[^0-9]+/);
+    const days = [...new Set(raw.map((x) => Math.round(num(x))).filter((x) => x >= 1 && x <= 31))].sort((a, b) => a - b);
+    return days.length ? days : [31];
+  }
+  /* those pay days as dates in one month (m may run past 11 or below 0); 30/31 fall back to the month's last day */
+  function payDatesIn(emp, y, m) {
+    const yy = y + Math.floor(m / 12), mm = ((m % 12) + 12) % 12, last = daysInMonth(yy, mm);
+    return [...new Set(payDaysOf(emp).map((d) => toISO(new Date(Date.UTC(yy, mm, Math.min(d, last))))))];
+  }
   /* The pay period (start … end, both inclusive) that contains `iso`. end is the pay day. */
   function periodFor(emp, iso) {
     if (emp.schedule === 'weekly' || emp.schedule === 'fortnightly') {
@@ -130,6 +143,12 @@
       const k = Math.ceil(daysBetween(anchor, iso) / 14);
       const end = addDays(anchor, 14 * k);
       return { start: addDays(end, -13), end };
+    }
+    if (emp.schedule === 'monthdays') {
+      const t = toDate(iso), y = t.getUTCFullYear(), m = t.getUTCMonth();
+      const end = [...payDatesIn(emp, y, m), ...payDatesIn(emp, y, m + 1)].find((x) => x >= iso);
+      const prev = [...payDatesIn(emp, y, m - 1), ...payDatesIn(emp, y, m)].filter((x) => x < end).pop();
+      return { start: addDays(prev, 1), end };
     }
     // monthly. Pay day 31 (or any day past the month's end) means the last day of the month.
     const pd = Math.min(31, Math.max(1, Math.round(num(emp.payDay) || 31)));
@@ -175,7 +194,9 @@
       else if (STATUS[s].worked > 0) c.extra += STATUS[s].worked;
     });
 
-    const rate = num(emp.rate);
+    // set dates each month: the rate is the monthly salary, split evenly over the pay dates
+    const perMonth = emp.schedule === 'monthdays' && emp.payType !== 'daily';
+    const rate = perMonth ? num(emp.rate) / payDaysOf(emp).length : num(emp.rate);
     const lines = [];
     let dayRate, earned;
     if (emp.payType === 'daily') {
@@ -188,7 +209,7 @@
       // fixed salary: the full amount, less unpaid days. A day is worth salary ÷ working days in the period.
       dayRate = c.expected ? rate / c.expected : 0;
       earned = rate;
-      lines.push({ label: 'Salary for the period', amount: round2(rate) });
+      lines.push({ label: perMonth ? `Salary for the period (${trim(num(emp.rate))} a month ÷ ${payDaysOf(emp).length})` : 'Salary for the period', amount: round2(rate) });
       const unpaid = c.A + 0.5 * c.H + c.beforeStart;
       if (c.A) lines.push({ label: `Absent ${trim(c.A)} day(s)`, amount: -round2(c.A * dayRate) });
       if (c.H) lines.push({ label: `Half days ${trim(c.H)} (½ day each)`, amount: -round2(0.5 * c.H * dayRate) });
@@ -202,7 +223,7 @@
     if (latePen) lines.push({ label: `Late ${c.L} time(s) × ${trim(num(emp.lateDeduct))}`, amount: -latePen });
     const adv = data.advances.filter((a) => a.empId === emp.id && a.date >= start && a.date <= end);
     const advTotal = round2(adv.reduce((a, x) => a + num(x.amount), 0));
-    if (advTotal) lines.push({ label: `Advance(s) already paid (${adv.length})`, amount: -advTotal });
+    if (advTotal) lines.push({ label: `Advance(s) already paid (${adv.length})`, amount: -advTotal, kind: 'adv' });
 
     const gross = round2(earned + c.extra * dayRate + overtime);
     const net = round2(gross - latePen - advTotal);
@@ -214,6 +235,41 @@
     };
   }
   const trim = (n) => String(round2(n)).replace(/\.0+$/, '');
+
+  /* ---------- running account ("sliding scale") ----------
+     Money can be paid at any time, in any amount. What a person has earned (every pay period whose
+     pay day has come) less everything paid to them so far is what is still owed. Paying early or
+     part-way simply lowers the next amount due. */
+  function account(data, emp, todayISO) {
+    const now = todayISO || localToday();
+    const from = [emp.startDate, data.settings.since].filter(Boolean).sort().pop() || now;
+    const stop = emp.endDate && emp.endDate < now ? emp.endDate : now;
+    let due = 0, current = null, guard = 0;
+    const periods = [];
+    let p = periodFor(emp, from);
+    while (p.start <= stop && guard++ < 2000) {
+      const r = calcPeriod(data, emp, p, now);
+      r.earned = round2(r.gross - r.latePen);
+      if (r.end <= now || (emp.endDate && r.end > emp.endDate && emp.endDate <= now)) { due += r.earned; periods.push(r); }
+      else { current = r; break; }
+      p = periodFor(emp, addDays(p.end, 1));
+    }
+    if (!current && !(emp.endDate && emp.endDate <= now)) { current = calcPeriod(data, emp, p, now); current.earned = round2(current.gross - current.latePen); }
+    const payments = [
+      ...data.payments.filter((x) => x.empId === emp.id).map((x) => ({ id: x.id, kind: 'pay', date: x.paidOn, amount: round2(num(x.net)), method: x.method || '', note: x.note || '', start: x.start || '', end: x.end || '' })),
+      ...data.advances.filter((x) => x.empId === emp.id).map((x) => ({ id: x.id, kind: 'adv', date: x.date, amount: round2(num(x.amount)), method: 'Advance', note: x.note || '' })),
+    ].sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+    const paid = round2(payments.reduce((a, x) => a + x.amount, 0));
+    const opening = round2(num(emp.opening));
+    const earned = round2(opening + due);
+    const owed = round2(earned - paid); // more than 0: still to pay now. Less than 0: paid ahead
+    const month = now.slice(0, 7);
+    return {
+      from, opening, due: round2(due), earned, paid, owed, current, periods, payments,
+      nextPay: current ? round2(Math.max(0, owed + current.earned)) : Math.max(0, owed),
+      paidThisMonth: round2(payments.filter((x) => (x.date || '').startsWith(month)).reduce((a, x) => a + x.amount, 0)),
+    };
+  }
 
   /* ---------- summaries ---------- */
   function daySummary(data, iso) {
@@ -243,8 +299,9 @@
     const tally = STATUS_ORDER.filter((k) => s.counts[k]).map((k) => `${STATUS[k].label} ${s.counts[k]}`).join(' · ');
     return `${head}\n\n${lines.join('\n')}\n\n${tally}`;
   }
-  function payText(data, emp, r, money) {
+  function payText(data, emp, r, money, acct) {
     const c = r.counts;
+    const paidIn = acct ? acct.payments.filter((x) => x.date >= r.start && x.date <= addDays(r.end, 6)) : [];
     return [
       `*${data.settings.business}* — pay slip`,
       `${emp.name}${emp.role ? ` (${emp.role})` : ''}`,
@@ -252,10 +309,12 @@
       '',
       `Days present ${c.P + c.L}${c.L ? ` (late ${c.L})` : ''} · half days ${c.H} · absent ${c.A} · sick ${c.S} · leave ${c.V}`,
       '',
-      ...r.lines.map((l) => `${l.label}: ${money(l.amount)}`),
+      ...r.lines.filter((l) => !acct || l.kind !== 'adv').map((l) => `${l.label}: ${money(l.amount)}`),
+      acct ? `*Earned this period: ${money(round2(r.gross - r.latePen))}*` : `*To pay: ${money(r.net)}*`,
       '',
-      `*To pay: ${money(r.net)}*`,
-      r.payment ? `Paid on ${fmtDate(r.payment.paidOn)} (${r.payment.method})` : '',
+      ...paidIn.map((x) => `Paid ${fmtDate(x.date)}${x.method ? ` (${x.method})` : ''}: ${money(x.amount)}`),
+      acct ? (acct.owed > 0.004 ? `*Still to pay: ${money(acct.owed)}*` : acct.owed < -0.004 ? `Paid ahead: ${money(-acct.owed)} (comes off the next pay)` : '*All paid up ✓*') : '',
+      !acct && r.payment ? `Paid on ${fmtDate(r.payment.paidOn)} (${r.payment.method})` : '',
     ].filter((x, i, a) => x !== '' || a[i - 1] !== '').join('\n').trim();
   }
 
@@ -264,6 +323,6 @@
     blankData, blankEmployee, normalise, uid, num, round2,
     toISO, addDays, dow, daysBetween, daysInMonth, localToday, fmtDate, eachDay,
     getMark, setMark, isWorkDay, expected,
-    periodFor, periodAt, nextPayDay, calcPeriod, daySummary, dayText, payText,
+    periodFor, periodAt, nextPayDay, calcPeriod, account, payDaysOf, daySummary, dayText, payText,
   };
 });
