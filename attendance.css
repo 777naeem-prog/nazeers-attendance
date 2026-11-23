@@ -285,11 +285,7 @@ p.na-center { display: block; }
 .na-staff-side .na-btn { min-width: 74px; text-decoration: none; color: inherit; }
 .na-staff-side .na-btn.primary { color: #fff; }
 
-/* settings: text size, how-to */
-.na-seg2 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
-.na-seg2 button { display: grid; justify-items: center; gap: 2px; min-height: 64px; border-radius: 14px; border: 1.5px solid rgba(15, 23, 42, .12); background: rgba(255, 255, 255, .7); cursor: pointer; font-weight: 600; font-size: 13.5px; }
-.na-seg2 button.on { border-color: var(--na-accent); background: rgba(64, 88, 255, .1); color: var(--na-accent); }
-.na-seg2 .ts-normal { font-size: 17px; } .na-seg2 .ts-large { font-size: 21px; } .na-seg2 .ts-xl { font-size: 25px; }
+/* settings: how-to */
 .na-steps { margin: 0; padding-left: 22px; display: grid; gap: 9px; }
 .na-steps li { line-height: 1.45; }
 .na-steps i { font-style: normal; font-weight: 600; }
@@ -303,16 +299,6 @@ p.na-center { display: block; }
 .na-extras > summary::before { content: '＋ '; }
 .na-extras[open] > summary::before { content: '－ '; }
 .na-extras > .na-form { margin-top: 10px; }
-
-/* larger text (Settings → Text size), for this phone only */
-@media (max-width: 760px) {
-  /* with bigger text the at-a-glance table keeps the columns that matter most: Paid and To pay */
-  .nms-att.na-text-large .na-sum th:nth-child(2), .nms-att.na-text-large .na-sum td:nth-child(2),
-  .nms-att.na-text-xl .na-sum th:nth-child(2), .nms-att.na-text-xl .na-sum td:nth-child(2) { display: none; }
-  .nms-att.na-text-xl .na-card-head { flex-direction: column; gap: 2px; }
-}
-.nms-att.na-text-large .na-main, .nms-att.na-text-large .na-modal, .nms-att.na-text-large .na-gate-box { zoom: 1.12; }
-.nms-att.na-text-xl .na-main, .nms-att.na-text-xl .na-modal, .nms-att.na-text-xl .na-gate-box { zoom: 1.25; }
 
 /* forms & modal */
 .na-form { display: grid; gap: 12px; }

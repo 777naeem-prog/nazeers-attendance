@@ -20,7 +20,7 @@ Open **https://777naeem-prog.github.io/nazeers-attendance/** — see *On the pho
    - Each person's card: Earned · Paid · To pay now, the next pay day and what will be due then (paying ahead lowers it), this period's attendance and how the amount was worked out, and every payment (tap × to remove a mistake).
    - *Pay*: any amount, any date, cash or bank, with an optional note — part of the wages, the full amount, or money in between pay days. Shortcuts fill in "still owed" or "up to the next pay day".
    - *Pay slip PDF*: makes a one-page PDF pay slip on the phone for the last pay period — slip number, pay period and pay date, employee details and rates, a coloured day-by-day attendance strip, an earnings-and-deductions table (days × rate), the payments, an account statement (brought forward + earned − paid = balance), year-to-date totals and a PAID stamp when nothing is owed — and opens the share menu, so it can go straight to the worker on WhatsApp (or be saved to Files / sent by e-mail). Where sharing is not available the PDF is downloaded. *Print* prints the same slip.
-5. **Settings**: text size (Normal / Large / Extra large, for this phone), a short *How to use the app* guide, family phones, business name, currency, *Count wages from* (the day you started using the app), shop closed days and **backups**.
+5. **Settings**: a short *How to use the app* guide, family phones, business name, currency, *Count wages from* (the day you started using the app), shop closed days and **backups**.
 
 ### Statuses
 

@@ -1,5 +1,5 @@
 /* Offline support: try the network first so updates arrive, fall back to the saved copy. */
-const CACHE = 'nms-attendance-v9';
+const CACHE = 'nms-attendance-v10';
 const SHELL = ['./', 'index.html', 'attendance.css', 'attendance-core.js', 'attendance-ui.js', 'attendance-sync.js', 'attendance-pdf.js', 'start.js', 'manifest.webmanifest', 'icons/icon-180.png', 'icons/icon-192.png', 'icons/icon-512.png'];
 self.addEventListener('install', (e) => { e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting())); });
 self.addEventListener('activate', (e) => {

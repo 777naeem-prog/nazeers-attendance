@@ -25,9 +25,7 @@
     const ui = { tab: opts.startTab || 'today', day: C.localToday(), month: C.localToday().slice(0, 7), payOffset: 0 };
 
     el.classList.add('nms-att');
-    const TEXT_KEY = (opts.storageKey || 'nms-attendance-v1') + '-text';
-    function applyTextSize() { const k = localStorage.getItem(TEXT_KEY) || 'normal'; el.classList.toggle('na-text-large', k === 'large'); el.classList.toggle('na-text-xl', k === 'xl'); }
-    applyTextSize();
+    try { localStorage.removeItem((opts.storageKey || 'nms-attendance-v1') + '-text'); } catch (e) { /* the old text-size choice is no longer used */ }
     const cloud = opts.cloud || null;
     function cloudLine() {
       if (!cloud) return 'Staff attendance &amp; pay';
@@ -800,9 +798,6 @@
       const s = data.settings;
       main.innerHTML = `
         <h1 class="na-h1">Settings</h1>
-        <section class="na-card na-pad"><h3 class="na-h3">Text size</h3>
-          <div class="na-seg2" role="group" aria-label="Text size">${[['normal', 'Normal'], ['large', 'Large'], ['xl', 'Extra large']].map(([k, l]) => `<button type="button" data-a="text-size" data-k="${k}" class="${(localStorage.getItem(TEXT_KEY) || 'normal') === k ? 'on' : ''}" aria-pressed="${(localStorage.getItem(TEXT_KEY) || 'normal') === k}"><span class="ts-${k}">Aa</span>${l}</button>`).join('')}</div>
-          <p class="na-hint">Only changes this phone.</p></section>
         <section class="na-card na-pad"><h3 class="na-h3">How to use the app</h3>
           <ol class="na-steps">
             <li><b>Staff</b> — add each worker once: name, pay, and when they are paid.</li>
@@ -986,7 +981,6 @@
         if (!confirm('Remove this phone? Changes that have not reached the cloud yet are lost. Then paste the setup link to set it up again.')) return;
         cloud.signOut(); cloud.clearLocal(); clearPin(); locked = false; pinEntry = ''; pinMsg = ''; data = C.normalise(null); closeModal(); render();
       },
-      'text-size': (t) => { localStorage.setItem(TEXT_KEY, t.dataset.k); applyTextSize(); render(); },
       'pin-lock': () => { locked = true; pinEntry = ''; pinMsg = ''; render(); },
       'pin-change': () => { if (!confirm('Choose a new PIN for this phone?')) return; clearPin(); pinFirst = ''; pinEntry = ''; pinMsg = ''; locked = false; render(); },
       'my-link': () => shareLink(cloud.ownLink()),
