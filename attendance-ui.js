@@ -25,6 +25,9 @@
     const ui = { tab: opts.startTab || 'today', day: C.localToday(), month: C.localToday().slice(0, 7), payOffset: 0 };
 
     el.classList.add('nms-att');
+    const TEXT_KEY = (opts.storageKey || 'nms-attendance-v1') + '-text';
+    function applyTextSize() { const k = localStorage.getItem(TEXT_KEY) || 'normal'; el.classList.toggle('na-text-large', k === 'large'); el.classList.toggle('na-text-xl', k === 'xl'); }
+    applyTextSize();
     const cloud = opts.cloud || null;
     function cloudLine() {
       if (!cloud) return 'Staff attendance &amp; pay';
@@ -173,11 +176,15 @@
 
     /* ---------- toast & modal ---------- */
     let toastTimer;
-    function toast(msg) {
+    /* a short message at the bottom; with undo, it carries an Undo button and stays a little longer */
+    function toast(msg, undo) {
       let t = el.querySelector('.na-toast');
       if (!t) { t = document.createElement('div'); t.className = 'na-toast'; t.setAttribute('role', 'status'); el.appendChild(t); }
-      t.textContent = msg; t.classList.add('on');
-      clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('on'), 2400);
+      t.innerHTML = esc(msg) + (undo ? ' <button type="button" class="na-undo">Undo</button>' : '');
+      t.classList.toggle('has-undo', !!undo);
+      if (undo) t.querySelector('.na-undo').onclick = () => { t.classList.remove('on'); undo(); };
+      t.classList.add('on');
+      clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('on'), undo ? 7000 : 3500);
     }
     function closeModal() { const m = el.querySelector('.na-modal-back'); if (m) m.remove(); }
     function modal(title, body, onSubmit, submit) {
@@ -238,6 +245,7 @@
       const main = el.querySelector('.na-main');
       if (!data.employees.length && ui.tab !== 'settings' && ui.tab !== 'staff') ui.tab = 'staff';
       ({ today: viewToday, month: viewMonth, pay: viewPay, staff: viewStaff, settings: viewSettings })[ui.tab](main);
+      if (ui.tab === 'month') { const sc = main.querySelector('.na-scroll'), td = main.querySelector('.na-grid th.td'); if (sc && td) sc.scrollLeft = Math.max(0, td.offsetLeft - sc.clientWidth / 2); }
       el.querySelectorAll('.na-tabs button').forEach((b) => b.classList.toggle('on', b.dataset.k === ui.tab));
     }
     /* first sign-in with a temporary password: choose your own before anything else */
@@ -259,6 +267,17 @@
 
     /* ---------- daily register ---------- */
     const MAIN_MARKS = ['P', 'L', 'H', 'A'];
+    const FULL_MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+    /* who is due to be paid today or soon, or is still owed from an earlier pay day */
+    function payReminders() {
+      const now = C.localToday(), out = [];
+      for (const e of activeStaff()) {
+        const a = C.account(data, e, now);
+        if (a.owed > 0.004) out.push({ e, amt: a.owed, why: 'still owed from an earlier pay day', urgent: true });
+        else if (a.current && a.current.daysToPay <= 1) out.push({ e, amt: a.nextPay, why: a.current.daysToPay === 0 ? 'pay day today' : 'pay day tomorrow', urgent: a.current.daysToPay === 0 });
+      }
+      return out;
+    }
     const SHORT = { P: 'Present', L: 'Late', H: 'Half day', A: 'Absent', S: 'Sick', V: 'Leave', O: 'Day off' };
     function viewToday(main) {
       const d = ui.day, isToday = d === C.localToday();
@@ -268,14 +287,17 @@
       main.innerHTML = `
         <div class="na-dayhead">
           <button type="button" class="na-round" data-a="day" data-n="-1" aria-label="Previous day">‹</button>
-          <label class="na-daytitle"><span>${isToday ? 'Today' : C.DAY_NAMES[C.dow(d)]}</span><b>${fmtDate(d)}</b><input type="date" value="${d}" data-a-change="day-pick" aria-label="Pick a date"></label>
+          <label class="na-daytitle"><span>${isToday ? 'Today · ' : ''}${C.DAY_NAMES[C.dow(d)]}</span><b>${+d.slice(8)} ${FULL_MONTHS[+d.slice(5, 7) - 1]} ${d.slice(0, 4)}</b><input type="date" value="${d}" data-a-change="day-pick" aria-label="Pick a date"></label>
           <button type="button" class="na-round" data-a="day" data-n="1" aria-label="Next day">›</button>
         </div>
-        ${isToday ? '' : '<div class="na-center"><button type="button" class="na-btn sm ghost" data-a="day-today">Back to today</button></div>'}
+        ${isToday ? '' : '<div class="na-center"><button type="button" class="na-btn sm" data-a="day-today">← Back to today</button></div>'}
+        ${isToday && staff.length ? (() => { const rem = payReminders(); return rem.length ? `<section class="na-card na-remind"><div class="na-remind-head"><b>💰 Pay to do</b><button type="button" class="na-btn sm ghost" data-a="tab" data-k="pay">Open Pay ›</button></div>
+          ${rem.slice(0, 4).map((x) => `<button type="button" class="na-remind-row ${x.urgent ? 'urgent' : ''}" data-a="pay" data-e="${x.e.id}"><span><b>${esc(x.e.name)}</b><i>${x.why}</i></span><strong>${money(x.amt)}</strong></button>`).join('')}
+          ${rem.length > 4 ? `<p class="na-hint na-pad-x">…and ${rem.length - 4} more under Pay.</p>` : ''}</section>` : ''; })() : ''}
         ${closed ? `<div class="na-card na-pad na-closed"><b>Shop closed — ${esc(closed)}</b><p>Nobody is expected. Salaries are not reduced; daily-rate staff are not paid for the day. Anyone who still came in can be marked below and is paid an extra day.</p></div>` : `
         <div class="na-tally">${STATUS_ORDER.filter((k) => sum.counts[k]).map((k) => `<span class="na-s s-${k}">${SHORT[k]} <b>${sum.counts[k]}</b></span>`).join('')}${sum.missing ? `<span class="na-s s-none">To mark <b>${sum.missing}</b></span>` : staff.length ? '<span class="na-s s-done">Everyone marked ✓</span>' : ''}</div>`}
         <div class="na-quick">
-          ${closed ? '' : `<button type="button" class="na-btn primary" data-a="all-present" ${sum.missing ? '' : 'disabled'}>✓ Everyone else present</button>`}
+          ${closed ? '' : sum.missing ? `<button type="button" class="na-btn primary" data-a="all-present">✓ Mark everyone else present (${sum.missing})</button>` : staff.length ? '<div class="na-done">✓ Everyone is marked for this day</div>' : ''}
           <button type="button" class="na-btn wa" data-a="share-day">WhatsApp</button>
           <button type="button" class="na-btn" data-a="closed">${closed ? 'Shop open after all' : 'Shop closed'}</button>
         </div>
@@ -288,7 +310,7 @@
             return `<div class="na-card na-row ${!exp && !m.s ? 'na-off' : ''}">
               <div class="na-who"><b>${esc(e.name)}</b><i>${esc(e.role || '')}${exp ? '' : `${e.role ? ' · ' : ''}${closed ? 'shop closed' : e.startDate > d ? 'not started yet' : 'day off'}`}${extra ? `${e.role || !exp ? ' · ' : ''}<em>${extra}</em>` : ''}</i></div>
               <div class="na-seg" role="group" aria-label="Attendance for ${esc(e.name)}">
-                ${MAIN_MARKS.map((k) => `<button type="button" class="s-${k} ${m.s === k ? 'on' : ''}" data-a="mark" data-e="${e.id}" data-s="${k}" aria-pressed="${m.s === k}">${SHORT[k]}</button>`).join('')}
+                ${MAIN_MARKS.map((k) => `<button type="button" class="s-${k} ${m.s === k ? 'on' : ''}" data-a="mark" data-e="${e.id}" data-s="${k}" aria-pressed="${m.s === k}" title="${STATUS[k].label}">${k === 'H' ? 'Half' : SHORT[k]}</button>`).join('')}
                 <button type="button" class="na-more ${moreOn ? `on s-${m.s}` : ''}" data-a="mark-sheet" data-e="${e.id}" aria-label="More for ${esc(e.name)}">${moreOn ? SHORT[m.s] : 'More'}</button>
               </div>
             </div>`;
@@ -408,7 +430,7 @@
           ${a.payments.length ? `<table class="na-lines">${a.payments.slice(0, 40).map((x) => `<tr><td>${fmtDate(x.date, true)}<span class="na-hint"> · ${esc(x.method || 'Paid')}${x.note ? ' · ' + esc(x.note) : ''}</span></td><td>${money(x.amount)}</td><td class="na-del"><button type="button" class="na-x sm" data-a="del-pay" data-id="${x.id}" data-k="${x.kind}" aria-label="Remove this payment">×</button></td></tr>`).join('')}</table>` : '<p class="na-hint">Nothing paid yet.</p>'}
         </details>
         <div class="na-pay-foot">
-          <button type="button" class="na-btn sm wa" data-a="slip-pdf" data-e="${e.id}">Pay slip PDF</button>
+          <button type="button" class="na-btn sm wa" data-a="slip-pdf" data-e="${e.id}">Send pay slip</button>
           <button type="button" class="na-btn sm" data-a="slip" data-e="${e.id}">Print</button>
           <button type="button" class="na-btn primary" data-a="pay" data-e="${e.id}">Pay ${esc(e.name.split(' ')[0])}</button>
         </div>
@@ -684,15 +706,16 @@
       const now = C.localToday();
       const list = data.employees.slice().sort((a, b) => (b.active !== false) - (a.active !== false) || a.name.localeCompare(b.name));
       main.innerHTML = `
-        <div class="na-head"><h1 class="na-h1">Staff</h1><button type="button" class="na-btn primary" data-a="emp">+ Add employee</button></div>
-        <section class="na-card">${list.length ? `<table class="na-tbl"><thead><tr><th>Name</th><th>Pay</th><th>Paid</th><th>Next pay day</th><th></th></tr></thead><tbody>
-          ${list.map((e) => `<tr data-a="emp" data-id="${e.id}" class="${e.active === false ? 'na-off' : ''}">
-            <td><b>${esc(e.name)}</b><i>${esc([e.role, e.phone].filter(Boolean).join(' · '))}${e.active === false ? ' · no longer working here' : ''}</i></td>
-            <td>${money(num(e.rate))} <i>${e.payType === 'daily' ? 'a day' : 'salary'}</i></td>
-            <td>${C.SCHEDULES[e.schedule]}<i>${payDayText(e)}</i></td>
-            <td>${e.active === false ? '—' : fmtDate(C.nextPayDay(e, now), true)}</td>
-            <td class="r"><button type="button" class="na-btn sm" data-a="pay" data-e="${e.id}">Pay</button></td></tr>`).join('')}
-          </tbody></table>` : `<div class="na-empty"><b>Add your staff to start.</b><p>For each person: their name, how much they earn, and when they are paid (monthly, on set dates like the 10th, 20th and 30th, every two weeks or weekly). Then mark attendance each day instead of sending it on WhatsApp — pay works itself out.</p><button type="button" class="na-btn primary" data-a="emp">+ Add employee</button></div>`}</section>`;
+        <div class="na-head"><h1 class="na-h1">Staff</h1><button type="button" class="na-btn primary" data-a="emp">+ Add a worker</button></div>
+        ${list.length ? `<section class="na-list">${list.map((e) => `<div class="na-card na-staff ${e.active === false ? 'na-off' : ''}" data-a="emp" data-id="${e.id}" role="button" tabindex="0">
+            <div class="na-staff-main"><b>${esc(e.name)}</b><i>${esc(e.role || '')}${e.active === false ? `${e.role ? ' · ' : ''}no longer working here` : ''}</i>
+              <span>${scheduleText(e)}</span>
+              ${e.active === false ? '' : `<em>Next pay day: ${fmtDate(C.nextPayDay(e, now), true)}</em>`}</div>
+            <div class="na-staff-side">${e.phone ? `<a class="na-btn sm" href="tel:${esc(e.phone.replace(/[^0-9+]/g, ''))}" aria-label="Call ${esc(e.name)}">Call</a>` : ''}
+              ${e.active === false ? '' : `<button type="button" class="na-btn sm primary" data-a="pay" data-e="${e.id}">Pay</button>`}</div>
+          </div>`).join('')}</section>
+          <p class="na-hint na-center">Tap a worker to change their details.</p>`
+        : `<section class="na-card"><div class="na-empty"><b>Add your workers to start.</b><p>For each person: their name, how much they earn and when they are paid. Then mark attendance each day on the Today screen — the pay works itself out.</p><button type="button" class="na-btn primary" data-a="emp">+ Add a worker</button></div></section>`}`;
     }
     function payDayText(e) {
       if (e.schedule === 'monthly') return num(e.payDay) >= 31 ? 'on the last day of the month' : `on the ${ordinal(num(e.payDay))}`;
@@ -705,28 +728,32 @@
       const e = empById(id) || C.blankEmployee();
       const days = C.DAY_NAMES.map((n, i) => [i, n]);
       const monthDays = Array.from({ length: 30 }, (_, i) => [i + 1, ordinal(i + 1)]).concat([[31, 'Last day of the month']]);
-      modal(id ? `Edit ${e.name}` : 'Add employee', `
+      modal(id ? `Edit ${e.name}` : 'Add a worker', `
         <div class="na-form g2">
           ${field('Full name', 'name', e.name, { req: true })}
-          ${field('Job / role', 'role', e.role, { ph: 'e.g. Counter sales, Driver' })}
-          ${field('Phone', 'phone', e.phone, { type: 'tel' })}
-          ${field('ID number (optional)', 'idNo', e.idNo)}
-          ${field('Started on (only for someone new)', 'startDate', e.startDate, { type: 'date', hint: 'Leave empty if they already worked here.' })}
-          ${field('Paid', 'schedule', e.schedule, { options: Object.entries(C.SCHEDULES) })}
-          ${field('How pay is worked out', 'payType', e.payType, { options: Object.entries(C.PAY_TYPES), cls: 'span2' })}
-          ${field(e.payType === 'daily' ? 'Rate per day' : 'Salary per pay period', 'rate', num(e.rate) || '', { type: 'number', req: true, hint: 'Monthly → the monthly salary. Weekly → the weekly wage. Daily rate → the amount for one day.' })}
+          ${field('Job', 'role', e.role, { ph: 'e.g. Counter sales, Driver' })}
+          <h4 class="na-formhead span2">Pay</h4>
+          ${field('How is the pay worked out?', 'payType', e.payType, { options: [['salary', 'Fixed salary (the same every time)'], ['daily', 'Paid per day worked']], cls: 'span2' })}
+          ${field('When are they paid?', 'schedule', e.schedule, { options: [['monthly', 'Once a month'], ['monthdays', 'On set dates (e.g. 10th, 20th, 30th)'], ['fortnightly', 'Every two weeks'], ['weekly', 'Every week']], cls: 'span2' })}
+          ${field(e.payType === 'daily' ? 'Amount for one day' : 'Salary per month', 'rate', num(e.rate) || '', { type: 'number', req: true, ph: '0.00' })}
           <label class="na-fld" data-pd="monthly" ${e.schedule === 'monthly' ? '' : 'hidden'}><span>Pay day</span><select name="payDayM">${monthDays.map(([v, l]) => `<option value="${v}" ${e.schedule === 'monthly' && +e.payDay === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
           <label class="na-fld" data-pd="monthdays" ${e.schedule === 'monthdays' ? '' : 'hidden'}><span>Pay dates each month</span><input name="payDays" inputmode="numeric" value="${esc(C.payDaysOf(e).join(', '))}" placeholder="10, 20, 30"><i>Days of the month, e.g. 10, 20, 30. The monthly salary is split evenly over them; 30 or 31 means month-end in short months.</i></label>
           <label class="na-fld" data-pd="week" ${e.schedule === 'weekly' || e.schedule === 'fortnightly' ? '' : 'hidden'}><span>Pay day</span><select name="payDayW">${days.map(([v, l]) => `<option value="${v}" ${(e.schedule === 'weekly' || e.schedule === 'fortnightly') && +e.payDay === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
           <label class="na-fld span2" data-pd="fortnightly" ${e.schedule === 'fortnightly' ? '' : 'hidden'}><span>One recent or upcoming pay date</span><input type="date" name="anchor" value="${esc(e.anchor)}"><i>So the app knows which week the two-week cycle ends on.</i></label>
+          <p class="na-summary span2" aria-live="polite"></p>
+          <details class="na-extras span2"><summary>More details (phone, ID, working days, overtime…)</summary><div class="na-form g2">
+          ${field('Phone', 'phone', e.phone, { type: 'tel' })}
+          ${field('ID number', 'idNo', e.idNo)}
+          ${field('Started on (only for someone new)', 'startDate', e.startDate, { type: 'date', hint: 'Leave empty if they already worked here.' })}
           <div class="na-fld span2"><span>Normal working days</span><div class="na-days">${days.map(([v, l]) => `<label><input type="checkbox" name="workDays" value="${v}" ${(e.workDays || []).includes(v) ? 'checked' : ''}>${l.slice(0, 3)}</label>`).join('')}</div></div>
           ${field('Overtime pay per hour', 'otRate', num(e.otRate) || '', { type: 'number', ph: '0' })}
           ${field('Deduct per late arrival', 'lateDeduct', num(e.lateDeduct) || '', { type: 'number', ph: '0 = just count it' })}
           ${field('Already owed to them when you started (optional)', 'opening', num(e.opening) || '', { ph: '0', cls: 'span2', hint: 'Wages from before you started using the app that are still unpaid. Use a minus sign if they owe the shop (e.g. −500).' })}
           ${id ? `<label class="na-check span2"><input type="checkbox" name="left" ${e.active === false ? 'checked' : ''}> No longer works here (kept in old records, hidden from the register)</label>` : ''}
           ${field('Notes', 'notes', e.notes, { area: 2, cls: 'span2' })}
+          </div></details>
         </div>
-        ${id ? '<button type="button" class="na-btn danger" data-a="del-emp" data-id="' + id + '">Delete employee and their records</button>' : ''}`,
+        ${id ? '<button type="button" class="na-btn danger" data-a="del-emp" data-id="' + id + '">Delete this worker and all their records</button>' : ''}`,
       (f) => {
         if (!f.name.trim()) { toast('Enter a name'); return false; }
         const wd = [].concat(f.workDays || []).map(Number);
@@ -742,7 +769,7 @@
         });
         if (!id) data.employees.push(rec);
         save(); toast(id ? 'Saved' : `${rec.name} added`); render();
-      }, id ? 'Save' : 'Add employee');
+      }, id ? 'Save' : 'Add worker');
       const form = el.querySelector('.na-modal');
       const sync = () => {
         const sch = form.schedule.value;
@@ -750,9 +777,22 @@
         form.querySelector('[data-pd="week"]').hidden = sch !== 'weekly' && sch !== 'fortnightly';
         form.querySelector('[data-pd="monthdays"]').hidden = sch !== 'monthdays';
         form.querySelector('[data-pd="fortnightly"]').hidden = sch !== 'fortnightly';
-        form.rate.closest('.na-fld').firstElementChild.textContent = form.payType.value === 'daily' ? 'Rate per day' : sch === 'monthly' || sch === 'monthdays' ? 'Salary per month' : sch === 'weekly' ? 'Wage per week' : 'Pay per two weeks';
+        const daily = form.payType.value === 'daily';
+        form.rate.closest('.na-fld').firstElementChild.textContent = daily ? 'Amount for one day' : sch === 'monthly' || sch === 'monthdays' ? 'Salary per month' : sch === 'weekly' ? 'Wage per week' : 'Pay every two weeks';
+        // the whole arrangement in one plain sentence
+        const amt = num(form.rate.value), who = form.name.value.trim().split(' ')[0] || 'They';
+        const probe = { schedule: sch, payDay: sch === 'monthly' ? num(form.payDayM.value) : num(form.payDayW.value), payDays: form.payDays.value };
+        const when = payDayText(probe);
+        let text = '';
+        if (amt > 0) {
+          if (daily) text = `${who} earns ${money(amt)} for each day worked, paid ${when}.`;
+          else if (sch === 'monthdays') { const n = C.payDaysOf(probe).length; text = `${who} earns ${money(amt)} a month, paid ${when} — ${money(round2(amt / n))} each time.`; }
+          else text = `${who} earns ${money(amt)} ${sch === 'monthly' ? 'a month' : sch === 'weekly' ? 'a week' : 'every two weeks'}, paid ${when}.`;
+        }
+        form.querySelector('.na-summary').textContent = text;
+        form.querySelector('.na-summary').hidden = !text;
       };
-      form.addEventListener('change', sync); sync();
+      form.addEventListener('change', sync); form.addEventListener('input', sync); sync();
     }
 
     /* ---------- settings ---------- */
@@ -760,13 +800,25 @@
       const s = data.settings;
       main.innerHTML = `
         <h1 class="na-h1">Settings</h1>
+        <section class="na-card na-pad"><h3 class="na-h3">Text size</h3>
+          <div class="na-seg2" role="group" aria-label="Text size">${[['normal', 'Normal'], ['large', 'Large'], ['xl', 'Extra large']].map(([k, l]) => `<button type="button" data-a="text-size" data-k="${k}" class="${(localStorage.getItem(TEXT_KEY) || 'normal') === k ? 'on' : ''}" aria-pressed="${(localStorage.getItem(TEXT_KEY) || 'normal') === k}"><span class="ts-${k}">Aa</span>${l}</button>`).join('')}</div>
+          <p class="na-hint">Only changes this phone.</p></section>
+        <section class="na-card na-pad"><h3 class="na-h3">How to use the app</h3>
+          <ol class="na-steps">
+            <li><b>Staff</b> — add each worker once: name, pay, and when they are paid.</li>
+            <li><b>Today</b> — every morning tap <i>Present</i>, <i>Late</i>, <i>Half day</i> or <i>Absent</i> for each worker. <i>Mark everyone else present</i> does the rest in one tap.</li>
+            <li><b>Pay</b> — shows what each worker has earned, what you paid and what is still to pay. Tap <i>Pay</i> whenever you hand over money — any amount, any day.</li>
+            <li><b>Send pay slip</b> — makes a PDF pay slip and sends it on WhatsApp.</li>
+            <li><b>Month</b> — the whole month at a glance; tap a square to fix a mistake.</li>
+          </ol>
+          <p class="na-hint">Everything saves by itself and appears on the family's other phones within a minute.</p></section>
         ${cloud ? cloudCard() : ''}
         <section class="na-card na-pad"><h3 class="na-h3">Business</h3>
           <form class="na-form g2" data-form="settings">
             ${field('Business name', 'business', s.business, { req: true })}
             ${field('Currency symbol', 'currency', s.currency, { ph: 'R' })}
             ${field('Phone (printed on pay slips)', 'phone', s.phone)}
-            ${field('Attendance kept here since', 'since', s.since, { type: 'date', hint: 'Unmarked days before this date are not flagged as missing.' })}
+            ${field('Count wages from', 'since', s.since, { type: 'date', hint: 'The day you started using this app. Wages are counted from here, so older months do not show as unpaid.' })}
           </form></section>
         <section class="na-card na-pad"><h3 class="na-h3">Shop closed days</h3>
           ${Object.keys(data.closed).length ? `<table class="na-lines">${Object.keys(data.closed).sort().reverse().slice(0, 12).map((d) => `<tr><td>${fmtDate(d, true)}</td><td>${esc(data.closed[d])}</td><td><button type="button" class="na-x sm" data-a="del-closed" data-d="${d}" aria-label="Remove">×</button></td></tr>`).join('')}</table>` : '<p class="na-hint">None yet. Use “Shop closed” on the daily register for public holidays and days the shop does not open.</p>'}
@@ -828,12 +880,13 @@
         save(); render();
       },
       'all-present': () => {
-        let n = 0;
+        const day = ui.day, done = [];
         for (const e of activeStaff()) {
-          const m = C.getMark(data, ui.day, e.id);
-          if ((!m || !m.s) && C.expected(data, e, ui.day)) { C.setMark(data, ui.day, e.id, { s: 'P' }); n++; }
+          const m = C.getMark(data, day, e.id);
+          if ((!m || !m.s) && C.expected(data, e, day)) { C.setMark(data, day, e.id, { s: 'P' }); done.push(e.id); }
         }
-        save(); toast(`${n} marked present`); render();
+        save(); render();
+        toast(`${done.length} marked present`, () => { for (const id of done) C.setMark(data, day, id, { s: '' }); save(); render(); toast('Undone'); });
       },
       closed: () => {
         if (data.closed[ui.day]) { delete data.closed[ui.day]; save(); render(); return; }
@@ -933,6 +986,7 @@
         if (!confirm('Remove this phone? Changes that have not reached the cloud yet are lost. Then paste the setup link to set it up again.')) return;
         cloud.signOut(); cloud.clearLocal(); clearPin(); locked = false; pinEntry = ''; pinMsg = ''; data = C.normalise(null); closeModal(); render();
       },
+      'text-size': (t) => { localStorage.setItem(TEXT_KEY, t.dataset.k); applyTextSize(); render(); },
       'pin-lock': () => { locked = true; pinEntry = ''; pinMsg = ''; render(); },
       'pin-change': () => { if (!confirm('Choose a new PIN for this phone?')) return; clearPin(); pinFirst = ''; pinEntry = ''; pinMsg = ''; locked = false; render(); },
       'my-link': () => shareLink(cloud.ownLink()),
@@ -966,7 +1020,7 @@
     const onClick = (e) => {
       const t = e.target.closest('[data-a]');
       if (!t || !el.contains(t)) return;
-      if (t.tagName === 'TR' && e.target.closest('button,a')) return;
+      if ((t.tagName === 'TR' || t.classList.contains('na-staff')) && e.target.closest('button,a')) return;
       if (t.classList.contains('na-modal-back') && e.target !== t) return;
       const fn = ACT[t.dataset.a];
       if (t.tagName === 'A') e.preventDefault();
