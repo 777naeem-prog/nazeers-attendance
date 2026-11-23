@@ -41,16 +41,18 @@ The app lives at **https://777naeem-prog.github.io/nazeers-attendance/** (publis
 
 **For the owner's family only, with one shared login.** Nazeer and his sons all use the same login, so every phone shows the same register and pay — whoever updates it, the others see it within about a minute. There are no usernames or passwords: each phone is set up once with the private **setup link**, and each person chooses their own **4-digit PIN** for their own phone.
 
-1. **Tap the setup link** on the phone (on an iPhone, open it in **Safari**).
-2. **Choose a PIN** (typed twice).
-3. **Add it to the home screen** — Chrome: ⋮ → *Add to Home screen*. Safari: Share → *Add to Home Screen*. On the iPhone, always use the home-screen icon: Safari can clear a website's saved data after a week without a visit, but not an app on the home screen.
+1. **Open the app and put it on the home screen** — open https://777naeem-prog.github.io/nazeers-attendance/ (iPhone: in **Safari** → Share → *Add to Home Screen*; Android: Chrome ⋮ → *Add to Home screen*).
+2. **Open the new icon** and **paste the setup link**: in WhatsApp press and hold the link → *Copy*, then in the app tap *Paste* (or press in the box → Paste) → *Set up this phone*. (Tapping the link also works in the browser, but on an iPhone the home-screen app keeps its own separate storage, so set it up from inside the icon.)
+3. **Choose a PIN** (typed twice). Done — from now on open the icon and type the PIN.
+
+On the iPhone, always use the home-screen icon: Safari can clear a website's saved data after a week without a visit, but not an app on the home screen.
 
 The app locks itself after two minutes in the background (or *Settings → Lock now*); after five wrong PINs it makes you wait, longer each time. Without signal it keeps working and sends the changes later. If two phones mark the same person on the same day, the last change wins.
 
 **Settings → Family phones**
 - *Send the setup link* — add another phone (a son's phone, a new phone).
 - *Make a new link* — for a lost or stolen phone: every other phone is signed out at once (this one stays on); send the new link to the phones that should keep using the app.
-- *Forgot PIN?* — tap the setup link again on the phone and choose a new PIN. Nothing is lost.
+- *Forgot PIN?* — on the PIN screen: *Remove this phone and set it up again*, then paste the setup link and choose a new PIN. The records are safe in the cloud.
 - *Remove this phone* — takes the shop's records off the phone (they stay in the cloud); warns first if a change has not reached the cloud yet.
 
 Treat the setup link like a key: send it only to the family.

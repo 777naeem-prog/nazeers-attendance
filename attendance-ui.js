@@ -81,7 +81,13 @@
       if (joining) body = '<p class="na-gate-step">Setting up this phone…</p>';
       else if (!s.signedIn) body = (cloud.isRemoved()
           ? '<p class="na-gate-step"><b>This phone was signed out</b> because a new setup link was made. Ask Nazeer for the new link and tap it on this phone.</p>'
-          : '<p>Staff attendance &amp; pay</p><p class="na-gate-step">To set up this phone, tap the <b>setup link</b> you were sent (on WhatsApp).</p>')
+          : '<p>Staff attendance &amp; pay</p>')
+        + `<form class="na-join" data-form="join">
+            <p class="na-gate-step"><b>Set up this phone</b> — copy the setup link from WhatsApp (press and hold it → <i>Copy</i>) and paste it here:</p>
+            <div class="na-join-row"><input name="link" type="text" inputmode="url" autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false" placeholder="Paste the setup link" aria-label="Setup link">
+            ${navigator.clipboard && navigator.clipboard.readText ? '<button type="button" class="na-btn sm" data-a="join-paste">Paste</button>' : ''}</div>
+            <button class="na-btn primary na-gate-go">Set up this phone</button>
+          </form>`
         + (joinError ? `<p class="na-pin-msg">${esc(joinError)}</p>` : '');
       else {
         const title = !pinSet() ? (pinFirst ? 'Type the same PIN again' : 'Choose a 4-digit PIN for this phone') : 'Enter your PIN';
@@ -96,19 +102,28 @@
         <div class="na-gate-mark">NMS</div>
         <h1>${esc(data.settings.business || "Nazeer's Motor Spares")}</h1>
         ${body}</div></div>`;
+      const jf = el.querySelector('[data-form="join"]');
+      if (jf) jf.addEventListener('submit', (ev) => { ev.preventDefault(); joinFromText(jf.link.value); });
     }
     /* a setup link was opened: https://…/#join=<login>.<secret> */
-    async function handleJoin() {
-      const j = cloud && cloud.parseLink && cloud.parseLink(location.hash);
+    /* the link (or just its #join=… part) pasted into the set-up box */
+    function joinFromText(text) {
+      const m = /#?join=([a-z0-9_-]+\.[A-Za-z0-9_-]{24,})/i.exec(String(text || '').trim());
+      const j = m && cloud.parseLink('#join=' + m[1]);
+      if (!j) { joinError = 'That does not look like the setup link. Copy the whole link from WhatsApp and paste it again.'; render(); return; }
+      handleJoin(j);
+    }
+    async function handleJoin(given) {
+      const j = given && given.login ? given : cloud && cloud.parseLink && cloud.parseLink(location.hash);
       if (!j) return;
-      history.replaceState(null, '', location.href.split('#')[0]);
+      if (!given || !given.login) history.replaceState(null, '', location.href.split('#')[0]);
       joining = j.login; joinError = ''; closeModal(); render();
       try {
         await cloud.signInWithLink(j.login, j.secret);
         clearPin(); locked = false; pinEntry = ''; pinFirst = ''; pinMsg = '';
       } catch (e) {
         joinError = e instanceof TypeError ? 'No internet connection — connect and tap the link again.'
-          : /wrong username|invalid/i.test(e.message) ? 'This setup link no longer works. Ask Nazeer for a new one.' : e.message;
+          : /wrong (username|email)|invalid/i.test(e.message) ? 'This setup link no longer works. Ask Nazeer for a new one.' : e.message;
       }
       joining = ''; data = C.normalise(storage.load()); ui.tab = 'today'; render();
     }
@@ -709,7 +724,15 @@
           else { pinMsg = ok === 'wait' ? 'Too many wrong tries — wait a minute, then try again' : 'Wrong PIN'; render(); }
         } finally { pinBusy = false; }
       },
-      'pin-forgot': () => modal('Forgot your PIN?', '<p>Open WhatsApp on this phone and tap your <b>setup link</b> again — you can then choose a new PIN. Nothing is lost; the records are safe in the cloud.</p><p class="na-hint">Lost the link? Nazeer can send a new one from Settings → Phones.</p>', null),
+      'join-paste': async () => {
+        try { const t = await navigator.clipboard.readText(); const i = el.querySelector('[data-form="join"] [name=link]'); if (i) i.value = t; joinFromText(t); }
+        catch (e) { toast('Press and hold in the box, then tap Paste'); }
+      },
+      'pin-forgot': () => modal('Forgot your PIN?', '<p>Set the phone up again with the <b>setup link</b> and choose a new PIN: tap <b>Remove this phone</b> below, then copy the link from WhatsApp and paste it in. The records are safe in the cloud.</p><button type="button" class="na-btn" data-a="forgot-reset">Remove this phone and set it up again</button><p class="na-hint">Lost the link? Nazeer can send a new one from Settings → Phones.</p>', null),
+      'forgot-reset': () => {
+        if (!confirm('Remove this phone? Changes that have not reached the cloud yet are lost. Then paste the setup link to set it up again.')) return;
+        cloud.signOut(); cloud.clearLocal(); clearPin(); locked = false; pinEntry = ''; pinMsg = ''; data = C.normalise(null); closeModal(); render();
+      },
       'pin-lock': () => { locked = true; pinEntry = ''; pinMsg = ''; render(); },
       'pin-change': () => { if (!confirm('Choose a new PIN for this phone?')) return; clearPin(); pinFirst = ''; pinEntry = ''; pinMsg = ''; locked = false; render(); },
       'my-link': () => shareLink(cloud.ownLink()),
