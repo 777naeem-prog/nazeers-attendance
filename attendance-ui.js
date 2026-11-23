@@ -34,7 +34,7 @@
     function passwordCard() {
       const s = cloud.status();
       if (!s.signedIn) return `<section class="na-card na-pad" id="na-cloud"><h3 class="na-h3">Share between phones</h3>
-        <p class="na-hint">Sign in with the username and password you were given. Use your own login on your own phone — Nazeer and the manager then see the same register and pay, and changes arrive on the other phone within about a minute. Without signal the app keeps working and catches up later.</p>
+        <p class="na-hint">Sign in with the username and password you were given. Every phone signed in with it sees the same register and pay, and changes arrive on the other phones within about a minute. Without signal the app keeps working and catches up later.</p>
         <div class="na-form g2"><label class="na-fld"><span>Username</span><input id="na-email" type="text" autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false" placeholder="e.g. nazeer"></label>
         <label class="na-fld"><span>Password</span><input id="na-pass" type="password" autocomplete="current-password"></label></div>
         <div class="na-actions" style="margin-top:12px"><button type="button" class="na-btn primary" data-a="cloud-in">Sign in</button></div></section>`;
@@ -80,12 +80,12 @@
       let body;
       if (joining) body = '<p class="na-gate-step">Setting up this phone…</p>';
       else if (!s.signedIn) body = (cloud.isRemoved()
-          ? '<p class="na-gate-step"><b>This phone has been removed.</b> A new setup link was made for this person. Ask Nazeer for it and tap it on this phone.</p>'
+          ? '<p class="na-gate-step"><b>This phone was signed out</b> because a new setup link was made. Ask Nazeer for the new link and tap it on this phone.</p>'
           : '<p>Staff attendance &amp; pay</p><p class="na-gate-step">To set up this phone, tap the <b>setup link</b> you were sent (on WhatsApp).</p>')
         + (joinError ? `<p class="na-pin-msg">${esc(joinError)}</p>` : '');
       else {
         const title = !pinSet() ? (pinFirst ? 'Type the same PIN again' : 'Choose a 4-digit PIN for this phone') : 'Enter your PIN';
-        body = `${!pinSet() && !pinFirst ? `<p>Set up for <b>${esc(s.name || s.login)}</b>. You will type this PIN each time you open the app.</p>` : ''}
+        body = `${!pinSet() && !pinFirst ? '<p>This phone is connected. Choose a PIN — you will type it each time you open the app.</p>' : ''}
           <p class="na-pin-title">${title}</p>
           <div class="na-pin-dots" aria-hidden="true">${[0, 1, 2, 3].map((i) => `<span class="${i < pinEntry.length ? 'on' : ''}"></span>`).join('')}</div>
           <p class="na-pin-msg" role="status">${esc(pinMsg)}</p>
@@ -118,32 +118,21 @@
       else if (hiddenAt && Date.now() - hiddenAt > 120000 && !locked) { locked = true; pinEntry = ''; pinMsg = ''; render(); }
     }
     function shareLink(link, who) {
-      share(`${data.settings.business} — staff attendance app${who ? ` for ${who}` : ''}.\n\nTap this link on the phone to set it up, then choose a 4-digit PIN:\n${link}\n\nKeep this message private — the link opens the app.`);
+      share(`${data.settings.business} — staff attendance app${who ? ` for ${who}` : ''}.\n\nTap this link on your phone to set it up, then choose your own 4-digit PIN:\n${link}\n\nKeep this message private — anyone with the link can open the app.`);
     }
     function phoneCard() {
       const s = cloud.status();
       return `<section class="na-card na-pad" id="na-cloud"><h3 class="na-h3">This phone</h3>
         <p class="na-sync"><span class="na-dot ${s.ok ? 'ok' : 'bad'}"></span>${esc(s.text)}</p>
-        <p class="na-hint">Set up for <b>${esc(s.name || s.login)}</b>${s.role ? ` (${esc(s.role)})` : ''}. Every change is shared with the other phones. The app locks itself after two minutes in the background.</p>
+        <p class="na-hint">Locked with this phone's own PIN. The app locks itself after two minutes in the background.</p>
         <div class="na-actions"><button type="button" class="na-btn" data-a="cloud-sync">Sync now</button><button type="button" class="na-btn" data-a="pin-lock">Lock now</button><button type="button" class="na-btn" data-a="pin-change">Change PIN</button></div>
-        <h3 class="na-h3" style="margin-top:18px">Phones</h3>
-        <div id="na-members"><p class="na-hint">Loading…</p></div>
-        <div class="na-actions" style="margin-top:14px"><button type="button" class="na-btn ghost" data-a="cloud-out">Remove this phone</button></div></section>`;
-    }
-    async function fillMembers() {
-      const box = el.querySelector('#na-members');
-      if (!box || !cloud.members) return;
-      const s = cloud.status();
-      let list = [];
-      try { list = await cloud.members(); } catch (e) { box.innerHTML = '<p class="na-hint">Connect to the internet to see who has access.</p>'; return; }
-      if (!el.contains(box)) return;
-      box.innerHTML = `<div class="na-people">${list.map((m) => {
-        const me = m.user_id === s.uid;
-        return `<div class="na-person"><div><b>${esc(m.name || m.role)}</b><i>${esc(m.role)}${me ? ' · this phone' : ''}</i></div>${me
-          ? '<button type="button" class="na-btn sm" data-a="my-link">Set up another phone for me</button>'
-          : s.role === 'owner' ? `<button type="button" class="na-btn sm" data-a="member-link" data-id="${esc(m.user_id)}" data-name="${esc(m.name || m.role)}">Send a new setup link</button>` : ''}</div>`;
-      }).join('')}</div>
-      ${s.role === 'owner' ? '<p class="na-hint">A new setup link replaces the old one: the phone that used the old link stops working straight away (lost phone, or a new manager).</p>' : ''}`;
+      </section>
+      <section class="na-card na-pad"><h3 class="na-h3">Family phones</h3>
+        <p class="na-hint">Everyone uses the same login, so every phone shows the same register and pay — whoever updates it, the others see it within a minute. To add a son's phone, send him the setup link: he taps it and chooses his own PIN.</p>
+        <div class="na-actions"><button type="button" class="na-btn primary" data-a="my-link">Send the setup link</button></div>
+        <p class="na-hint" style="margin-top:16px"><b>Phone lost or stolen?</b> Make a new link. Every other phone is signed out at once; send the new link to the phones that should keep using the app.</p>
+        <div class="na-actions"><button type="button" class="na-btn danger-outline" data-a="new-link">Make a new link</button><button type="button" class="na-btn ghost" data-a="cloud-out">Remove this phone</button></div>
+      </section>`;
     }
     if (cloud && cloud.onStatus) cloud.onStatus(() => {
       if (gated() !== wasGated) { wasGated = gated(); if (!el.querySelector('.na-modal.forced')) render(); return; }
@@ -212,20 +201,28 @@
     }
 
     /* ---------- layout ---------- */
-    const TABS = [['today', 'Daily register', 'Today'], ['month', 'Month sheet', 'Month'], ['pay', 'Pay', 'Pay'], ['staff', 'Staff', 'Staff'], ['settings', 'Settings', 'Settings']];
+    const TABS = [['today', 'Today', 'Today'], ['month', 'Month', 'Month'], ['pay', 'Pay', 'Pay'], ['staff', 'Staff', 'Staff'], ['settings', 'Settings', 'Settings']];
+    const TAB_ICON = {
+      today: '<path d="M8 3v3M16 3v3"/><rect x="3.5" y="5" width="17" height="15.5" rx="3"/><path d="m8.5 13 2.5 2.5 4.5-5"/>',
+      month: '<rect x="3.5" y="5" width="17" height="15.5" rx="3"/><path d="M3.5 10h17M8 3v3M16 3v3M8 14h.01M12 14h.01M16 14h.01M8 17.5h.01M12 17.5h.01"/>',
+      pay: '<rect x="3" y="6" width="18" height="13" rx="3"/><path d="M3 10.5h18M7 15h3"/>',
+      staff: '<circle cx="9" cy="8.5" r="3.2"/><path d="M3.5 19.5c.4-3.3 2.600-5 5.500-5s5.100 1.700 5.500 5"/><path d="M16 5.600a3 3 0 0 1 0 5.800M17.800 14.800c1.600.700 2.500 2.200 2.700 4.700"/>',
+      settings: '<circle cx="12" cy="12" r="3"/><path d="M12 3v2.500M12 18.500V21M3 12h2.500M18.500 12H21M5.600 5.600l1.800 1.800M16.600 16.600l1.800 1.800M5.600 18.400l1.800-1.800M16.600 7.400l1.800-1.800"/>',
+    };
+    const tabIcon = (k) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.800" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${TAB_ICON[k]}</svg>`;
     function render() {
       wasGated = gated();
       if (wasGated) { closeModal(); gateScreen(); return; }
       el.innerHTML = `
         <header class="na-top">
-          <div class="na-brand"><b>${esc(data.settings.business)}</b><i>${cloudLine()}</i></div>
-          <nav class="na-tabs">${TABS.map(([k, l, sh]) => `<button type="button" data-a="tab" data-k="${k}" class="${ui.tab === k ? 'on' : ''}"><span class="na-long">${l}</span><span class="na-short">${sh}</span></button>`).join('')}</nav>
+          <div class="na-brand"><span class="na-logo">NMS</span><span><b>${esc(data.settings.business)}</b><i>${cloudLine()}</i></span></div>
+
         </header>
-        <main class="na-main"></main>`;
+        <main class="na-main"></main>
+          <nav class="na-tabs" aria-label="Sections">${TABS.map(([k, l, sh]) => `<button type="button" data-a="tab" data-k="${k}" class="${ui.tab === k ? 'on' : ''}" ${ui.tab === k ? 'aria-current="page"' : ''}>${tabIcon(k)}<span class="na-long">${l}</span><span class="na-short">${sh}</span></button>`).join('')}</nav>`;
       const main = el.querySelector('.na-main');
       if (!data.employees.length && ui.tab !== 'settings' && ui.tab !== 'staff') ui.tab = 'staff';
       ({ today: viewToday, month: viewMonth, pay: viewPay, staff: viewStaff, settings: viewSettings })[ui.tab](main);
-      if (ui.tab === 'settings' && pinMode()) fillMembers();
       el.querySelectorAll('.na-tabs button').forEach((b) => b.classList.toggle('on', b.dataset.k === ui.tab));
     }
     /* first sign-in with a temporary password: choose your own before anything else */
@@ -246,46 +243,56 @@
     }
 
     /* ---------- daily register ---------- */
+    const MAIN_MARKS = ['P', 'L', 'H', 'A'];
+    const SHORT = { P: 'Present', L: 'Late', H: 'Half day', A: 'Absent', S: 'Sick', V: 'Leave', O: 'Day off' };
     function viewToday(main) {
       const d = ui.day, isToday = d === C.localToday();
       const sum = C.daySummary(data, d);
       const closed = data.closed[d];
       const staff = activeStaff();
       main.innerHTML = `
-        <div class="na-head">
-          <div class="na-daynav">
-            <button type="button" class="na-btn sm" data-a="day" data-n="-1" aria-label="Previous day">‹</button>
-            <input type="date" class="na-date" value="${d}" data-a-change="day-pick">
-            <button type="button" class="na-btn sm" data-a="day" data-n="1" aria-label="Next day">›</button>
-            ${isToday ? '<span class="na-chip">Today</span>' : '<button type="button" class="na-btn sm ghost" data-a="day-today">Back to today</button>'}
-          </div>
-          <div class="na-actions">
-            ${closed ? '' : `<button type="button" class="na-btn" data-a="all-present" ${sum.missing ? '' : 'disabled'}>Mark the rest present</button>`}
-            <button type="button" class="na-btn" data-a="closed">${closed ? 'Shop is open after all' : 'Shop closed'}</button>
-            <button type="button" class="na-btn wa" data-a="share-day">Send on WhatsApp</button>
-          </div>
+        <div class="na-dayhead">
+          <button type="button" class="na-round" data-a="day" data-n="-1" aria-label="Previous day">‹</button>
+          <label class="na-daytitle"><span>${isToday ? 'Today' : C.DAY_NAMES[C.dow(d)]}</span><b>${fmtDate(d)}</b><input type="date" value="${d}" data-a-change="day-pick" aria-label="Pick a date"></label>
+          <button type="button" class="na-round" data-a="day" data-n="1" aria-label="Next day">›</button>
         </div>
-        ${cloud && !cloud.status().signedIn ? '<div class="na-warn">Not signed in — these records are only on this phone. <a href="#" data-a="tab" data-k="settings">Sign in</a> so Nazeer and the manager see the same register.</div>' : ''}
-        <h1 class="na-h1">${fmtDate(d, true)}</h1>
-        ${closed ? `<div class="na-card na-pad na-closed"><b>Shop closed — ${esc(closed)}</b><p>Nobody is expected today. Salaries are not reduced; daily-rate staff are not paid for the day. Anyone who still came in can be marked below and is paid an extra day.</p></div>` : ''}
-        ${!closed ? `<div class="na-tally">${STATUS_ORDER.filter((k) => sum.counts[k]).map((k) => `<span class="na-s s-${k}">${STATUS[k].label} <b>${sum.counts[k]}</b></span>`).join('')}${sum.missing ? `<span class="na-s s-none">Not marked <b>${sum.missing}</b></span>` : staff.length ? '<span class="na-s s-done">Everyone marked</span>' : ''}</div>` : ''}
-        <section class="na-card">
+        ${isToday ? '' : '<div class="na-center"><button type="button" class="na-btn sm ghost" data-a="day-today">Back to today</button></div>'}
+        ${closed ? `<div class="na-card na-pad na-closed"><b>Shop closed — ${esc(closed)}</b><p>Nobody is expected. Salaries are not reduced; daily-rate staff are not paid for the day. Anyone who still came in can be marked below and is paid an extra day.</p></div>` : `
+        <div class="na-tally">${STATUS_ORDER.filter((k) => sum.counts[k]).map((k) => `<span class="na-s s-${k}">${SHORT[k]} <b>${sum.counts[k]}</b></span>`).join('')}${sum.missing ? `<span class="na-s s-none">To mark <b>${sum.missing}</b></span>` : staff.length ? '<span class="na-s s-done">Everyone marked ✓</span>' : ''}</div>`}
+        <div class="na-quick">
+          ${closed ? '' : `<button type="button" class="na-btn primary" data-a="all-present" ${sum.missing ? '' : 'disabled'}>✓ Everyone else present</button>`}
+          <button type="button" class="na-btn wa" data-a="share-day">WhatsApp</button>
+          <button type="button" class="na-btn" data-a="closed">${closed ? 'Shop open after all' : 'Shop closed'}</button>
+        </div>
+        <section class="na-list">
           ${staff.length ? staff.map((e) => {
             const m = C.getMark(data, d, e.id) || {};
             const exp = C.expected(data, e, d);
-            return `<div class="na-row ${!exp && !m.s ? 'na-off' : ''}">
-              <div class="na-who"><b>${esc(e.name)}</b><i>${esc(e.role || '')}${exp ? '' : `${e.role ? ' · ' : ''}${closed ? 'shop closed' : e.startDate > d ? 'not started yet' : 'not a working day'}`}</i></div>
+            const extra = [num(m.ot) ? `+${num(m.ot)} h overtime` : '', m.note].filter(Boolean).map(esc).join(' · ');
+            const moreOn = m.s && !MAIN_MARKS.includes(m.s);
+            return `<div class="na-card na-row ${!exp && !m.s ? 'na-off' : ''}">
+              <div class="na-who"><b>${esc(e.name)}</b><i>${esc(e.role || '')}${exp ? '' : `${e.role ? ' · ' : ''}${closed ? 'shop closed' : e.startDate > d ? 'not started yet' : 'day off'}`}${extra ? `${e.role || !exp ? ' · ' : ''}<em>${extra}</em>` : ''}</i></div>
               <div class="na-seg" role="group" aria-label="Attendance for ${esc(e.name)}">
-                ${STATUS_ORDER.map((k) => `<button type="button" class="s-${k} ${m.s === k ? 'on' : ''}" data-a="mark" data-e="${e.id}" data-s="${k}" title="${STATUS[k].label}" aria-pressed="${m.s === k}">${STATUS[k].label.replace(' (paid)', '')}</button>`).join('')}
-              </div>
-              <div class="na-extra">
-                <label title="Overtime hours"><span>OT h</span><input type="number" min="0" step="0.5" inputmode="decimal" value="${num(m.ot) || ''}" data-a-change="ot" data-e="${e.id}" placeholder="0"></label>
-                <input type="text" class="na-note" value="${esc(m.note || '')}" data-a-change="note" data-e="${e.id}" placeholder="Note (optional)">
+                ${MAIN_MARKS.map((k) => `<button type="button" class="s-${k} ${m.s === k ? 'on' : ''}" data-a="mark" data-e="${e.id}" data-s="${k}" aria-pressed="${m.s === k}">${SHORT[k]}</button>`).join('')}
+                <button type="button" class="na-more ${moreOn ? `on s-${m.s}` : ''}" data-a="mark-sheet" data-e="${e.id}" aria-label="More for ${esc(e.name)}">${moreOn ? SHORT[m.s] : 'More'}</button>
               </div>
             </div>`;
-          }).join('') : '<div class="na-empty"><b>No staff yet.</b><p>Add your employees under Staff first.</p></div>'}
+          }).join('') : '<div class="na-card"><div class="na-empty"><b>No staff yet.</b><p>Add your workers under Staff first.</p><button type="button" class="na-btn primary" data-a="tab" data-k="staff">Go to Staff</button></div></div>'}
         </section>
-        <p class="na-hint">Tap a status to mark it, tap it again to clear. Changes save straight away.</p>`;
+        <p class="na-hint na-center">Tap to mark, tap again to clear. <b>More</b> has sick, leave, day off, overtime and a note. Everything saves by itself.</p>`;
+    }
+    function markSheet(empId) {
+      const e = empById(empId), m = C.getMark(data, ui.day, empId) || {};
+      modal(`${e.name} — ${fmtDate(ui.day, true)}`, `
+        <div class="na-moregrid">${['S', 'V', 'O'].map((k) => `<button type="button" class="na-morebtn s-${k} ${m.s === k ? 'on' : ''}" data-a="mark-more" data-e="${empId}" data-s="${k}">${STATUS[k].label}</button>`).join('')}
+          <button type="button" class="na-morebtn" data-a="mark-more" data-e="${empId}" data-s="">Clear</button></div>
+        <div class="na-form g2" style="margin-top:14px">
+          ${field('Overtime (hours)', 'ot', num(m.ot) || '', { type: 'number', ph: '0' })}
+          ${field('Note', 'note', m.note || '', { ph: 'e.g. taxi late, doctor' })}
+        </div>`, (f) => {
+        C.setMark(data, ui.day, empId, { ot: round2(num(f.ot)), note: (f.note || '').trim() });
+        save(); render();
+      }, 'Save');
     }
 
     /* ---------- month sheet ---------- */
@@ -588,6 +595,14 @@
       day: (t) => { ui.day = addDays(ui.day, +t.dataset.n); render(); },
       'day-today': () => { ui.day = C.localToday(); render(); },
       'goto-day': (t, e) => { e.preventDefault(); ui.day = t.dataset.d; ui.tab = 'today'; render(); },
+      'mark-sheet': (t) => markSheet(t.dataset.e),
+      'mark-more': (t) => {
+        const form = t.closest('form');
+        const patch = { s: t.dataset.s };
+        if (form) { patch.ot = round2(num(form.ot.value)); patch.note = form.note.value.trim(); }
+        C.setMark(data, ui.day, t.dataset.e, patch);
+        save(); closeModal(); render();
+      },
       mark: (t) => {
         const cur = C.getMark(data, ui.day, t.dataset.e);
         C.setMark(data, ui.day, t.dataset.e, { s: cur && cur.s === t.dataset.s ? '' : t.dataset.s });
@@ -688,7 +703,14 @@
       'pin-forgot': () => modal('Forgot your PIN?', '<p>Open WhatsApp on this phone and tap your <b>setup link</b> again — you can then choose a new PIN. Nothing is lost; the records are safe in the cloud.</p><p class="na-hint">Lost the link? Nazeer can send a new one from Settings → Phones.</p>', null),
       'pin-lock': () => { locked = true; pinEntry = ''; pinMsg = ''; render(); },
       'pin-change': () => { if (!confirm('Choose a new PIN for this phone?')) return; clearPin(); pinFirst = ''; pinEntry = ''; pinMsg = ''; locked = false; render(); },
-      'my-link': () => shareLink(cloud.ownLink(), cloud.status().name),
+      'my-link': () => shareLink(cloud.ownLink()),
+      'new-link': async (t) => {
+        if (!confirm('Make a new setup link? Every other phone is signed out straight away (this one stays on). Then send the new link to the phones that should keep using the app.')) return;
+        t.disabled = true;
+        try { const link = await cloud.resetOwn(); toast('New link made — the old one no longer works'); shareLink(link); }
+        catch (e) { toast(e instanceof TypeError ? 'No internet connection' : e.message); }
+        t.disabled = false;
+      },
       'member-link': async (t) => {
         const name = t.dataset.name;
         if (!confirm(`Make a new setup link for ${name}? The phone ${name} uses now stops working straight away; they set it up again with the new link.`)) return;

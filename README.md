@@ -4,7 +4,7 @@ This app replaces keeping attendance in a WhatsApp chat. Each morning the owner 
 
 ## Using it
 
-Open **https://777naeem-prog.github.io/nazeers-attendance/** — see *On the phones* below for setting up Nazeer's and the manager's phones.
+Open **https://777naeem-prog.github.io/nazeers-attendance/** — see *On the phones* below for setting up the family's phones.
 
 1. **Staff**: add each employee with their name, role, pay and how pay is worked out:
    - **Fixed salary**: a set amount per pay period. Absent days and half days are deducted at *salary ÷ working days in the period*.
@@ -33,31 +33,31 @@ Open **https://777naeem-prog.github.io/nazeers-attendance/** — see *On the pho
 
 If someone works on a day off or on a day the shop was closed, they are paid an extra day.
 
-## On the phones (Honor and iPhone)
+## On the phones (Android and iPhone)
 
 The app lives at **https://777naeem-prog.github.io/nazeers-attendance/** (published by GitHub Pages from this repository; every change pushed to `main` goes live within a minute or two). It works the same on Android and iPhone.
 
-**No usernames or passwords.** Each person gets a private **setup link**. They tap it once on their phone, choose a **4-digit PIN**, and from then on open the app and type the PIN. The app locks itself after two minutes in the background (or *Settings → Lock now*). After five wrong PINs it makes them wait, longer each time.
+**For the owner's family only, with one shared login.** Nazeer and his sons all use the same login, so every phone shows the same register and pay — whoever updates it, the others see it within about a minute. There are no usernames or passwords: each phone is set up once with the private **setup link**, and each person chooses their own **4-digit PIN** for their own phone.
 
-1. **Tap the setup link** on the phone. On the Honor it opens in Chrome; on the iPhone, open it in **Safari**.
+1. **Tap the setup link** on the phone (on an iPhone, open it in **Safari**).
 2. **Choose a PIN** (typed twice).
 3. **Add it to the home screen** — Chrome: ⋮ → *Add to Home screen*. Safari: Share → *Add to Home Screen*. On the iPhone, always use the home-screen icon: Safari can clear a website's saved data after a week without a visit, but not an app on the home screen.
 
-Both phones then show the same register, month sheet and pay; changes reach the other phone within about a minute. Without signal the app keeps working and sends the changes later. If both people mark the same person on the same day, the last change wins.
+The app locks itself after two minutes in the background (or *Settings → Lock now*); after five wrong PINs it makes you wait, longer each time. Without signal it keeps working and sends the changes later. If two phones mark the same person on the same day, the last change wins.
 
-**Settings → Phones**
-- *Set up another phone for me* — sends your own setup link (e.g. a new phone).
-- *Send a new setup link* (owner only) — makes a new link for someone else and **stops their old one at once**: the phone that used it shows "This phone has been removed". Use it for a lost phone or a new manager.
-- *Forgot PIN?* — tap your setup link again on the phone and choose a new PIN. Nothing is lost.
+**Settings → Family phones**
+- *Send the setup link* — add another phone (a son's phone, a new phone).
+- *Make a new link* — for a lost or stolen phone: every other phone is signed out at once (this one stays on); send the new link to the phones that should keep using the app.
+- *Forgot PIN?* — tap the setup link again on the phone and choose a new PIN. Nothing is lost.
 - *Remove this phone* — takes the shop's records off the phone (they stay in the cloud); warns first if a change has not reached the cloud yet.
 
-Treat a setup link like a key: send it only to that person.
+Treat the setup link like a key: send it only to the family.
 
 ### Behind the scenes
 
-Records are shared through Nazeer's own Supabase project (**nazeers-parts-board**); only members can read or write them. There are two members, `nazeer` (owner) and `manager` (accounts `nazeer@nms-staff.invalid` and `manager@nms-staff.invalid`; no e-mail is ever sent). A setup link is `…/#join=<login>.<secret>`; the part after `#` never leaves the phone except to sign in. The PIN is stored only on the phone, hashed.
+Records are shared through Nazeer's own Supabase project (**nazeers-parts-board**); only members can read or write them, and there is one member — the shared login `nazeer` (account `nazeer@nms-staff.invalid`; no e-mail is ever sent). The setup link is `…/#join=nazeer.<secret>`; the part after `#` never leaves the phone except to sign in. Each PIN is stored only on its own phone, hashed.
 
-If Nazeer himself loses his link and his phone, an administrator sets a new secret in the Supabase *SQL Editor* and builds the link `https://777naeem-prog.github.io/nazeers-attendance/#join=nazeer.<new secret>`:
+If every phone and the link are lost, an administrator sets a new secret in the Supabase *SQL Editor* and builds the link `https://777naeem-prog.github.io/nazeers-attendance/#join=nazeer.<new secret>`:
 
 ```sql
 update auth.users set encrypted_password = extensions.crypt('<new secret, 32 random characters>', extensions.gen_salt('bf'))
@@ -65,9 +65,7 @@ where email = 'nazeer@nms-staff.invalid';
 delete from auth.sessions where user_id = (select id from auth.users where email = 'nazeer@nms-staff.invalid');
 ```
 
-To add another member (e.g. a second manager), see `supabase/` for the table layout: create the user, then add a row to `public.nms_members`; Nazeer can then send them a setup link from Settings.
-
-The database setup is in `supabase/001_nms_attendance_sync.sql` and `supabase/002_nms_owner_reset_login.sql` (both already applied).
+The database setup is in `supabase/` (all already applied).
 
 ### Backups
 

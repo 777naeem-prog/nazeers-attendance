@@ -127,7 +127,7 @@
             catch (e2) { if (!e2.auth) throw e2; st.removed = true; }
           }
           st.session = null; persist(); emit();
-          throw new Error(st.removed ? 'This phone has been removed — ask Nazeer for a new setup link' : 'Signed out — please sign in again');
+          throw new Error(st.removed ? 'This phone was signed out — a new setup link was made' : 'Signed out — please sign in again');
         }
       }
       return st.session.access;
@@ -247,13 +247,18 @@
     /* this phone's own link: set up another phone for the same person */
     const ownLink = () => (st.cred ? linkFor(st.cred.login, st.cred.secret) : '');
     async function members() { return rest('GET', 'nms_members?select=user_id,role,name&order=role.desc,name.asc'); }
-    /* owner only: replace someone's link; their old phones stop working */
+    /* owner only: replace a login's link; phones that used the old one stop working */
     async function resetMember(userId) {
       const secret = newSecret();
       const headers = { apikey: KEY, Authorization: 'Bearer ' + await token(), 'Content-Type': 'application/json' };
       const r = await fetch(URL_ + '/rest/v1/rpc/nms_reset_login', { method: 'POST', headers, body: JSON.stringify({ target_user: userId, new_secret: secret }) });
       const j = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(j.message || 'Could not make a new link');
+      // a new link for this phone's own login: every other phone is signed out; this one signs straight back in
+      if (st.session && userId === st.session.uid) {
+        await signIn(j, secret, true);
+        st.cred = { login: j, secret }; persist(); emit();
+      }
       return linkFor(j, secret);
     }
     function signOut() {
@@ -284,7 +289,7 @@
 
     return {
       storage, run, schedule, signIn, signOut, setPassword, status,
-      signInWithLink, parseLink, ownLink, members, resetMember, isRemoved: () => !!st.removed,
+      signInWithLink, parseLink, ownLink, members, resetMember, resetOwn: () => resetMember(st.session && st.session.uid), isRemoved: () => !!st.removed,
       /* changes on this phone the cloud has not received yet */
       pending() {
         const local = toMap(current ? C.normalise(current) : null);
