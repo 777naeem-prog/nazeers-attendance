@@ -271,7 +271,8 @@
       const now = C.localToday(), out = [];
       for (const e of activeStaff()) {
         const a = C.account(data, e, now);
-        if (a.owed > 0.004) out.push({ e, amt: a.owed, why: 'still owed from an earlier pay day', urgent: true });
+        const last = a.periods[a.periods.length - 1];
+        if (a.owed > 0.004) out.push({ e, amt: a.owed, why: last && last.end === now ? 'pay day today' : 'still owed from an earlier pay day', urgent: true });
         else if (a.current && a.current.daysToPay <= 1) out.push({ e, amt: a.nextPay, why: a.current.daysToPay === 0 ? 'pay day today' : 'pay day tomorrow', urgent: a.current.daysToPay === 0 });
       }
       return out;
@@ -289,9 +290,15 @@
           <button type="button" class="na-round" data-a="day" data-n="1" aria-label="Next day">›</button>
         </div>
         ${isToday ? '' : '<div class="na-center"><button type="button" class="na-btn sm" data-a="day-today">← Back to today</button></div>'}
-        ${isToday && staff.length ? (() => { const rem = payReminders(); return rem.length ? `<section class="na-card na-remind"><div class="na-remind-head"><b>💰 Pay to do</b><button type="button" class="na-btn sm ghost" data-a="tab" data-k="pay">Open Pay ›</button></div>
-          ${rem.slice(0, 4).map((x) => `<button type="button" class="na-remind-row ${x.urgent ? 'urgent' : ''}" data-a="pay" data-e="${x.e.id}"><span><b>${esc(x.e.name)}</b><i>${x.why}</i></span><strong>${money(x.amt)}</strong></button>`).join('')}
-          ${rem.length > 4 ? `<p class="na-hint na-pad-x">…and ${rem.length - 4} more under Pay.</p>` : ''}</section>` : ''; })() : ''}
+        ${isToday && staff.length ? (() => {
+          const rem = payReminders(), due = rem.filter((x) => x.urgent), total = round2(due.reduce((t, x) => t + x.amt, 0));
+          return rem.length ? `<section class="na-card na-remind">
+            <div class="na-remind-head"><span><b>💰 Pay to do</b>${due.length ? `<i>${due.length} to pay now · <strong>${money(total)}</strong></i>` : '<i>Nothing due yet</i>'}</span><button type="button" class="na-btn sm ghost" data-a="tab" data-k="pay">Open Pay ›</button></div>
+            ${rem.slice(0, 6).map((x) => `<button type="button" class="na-remind-row ${x.urgent ? 'urgent' : ''}" data-a="pay" data-e="${x.e.id}"><span><b>${esc(x.e.name)}</b><i>${x.why}</i></span><strong>${money(x.amt)}</strong></button>`).join('')}
+            ${rem.length > 6 ? `<p class="na-hint na-pad-x">…and ${rem.length - 6} more under Pay.</p>` : ''}
+            ${due.length ? `<div class="na-remind-foot"><button type="button" class="na-btn primary" data-a="pay-all">✓ Paid everyone (${money(total)})</button><button type="button" class="na-btn" data-a="pay-list">Share list</button></div>` : ''}
+          </section>` : '';
+        })() : ''}
         ${closed ? `<div class="na-card na-pad na-closed"><b>Shop closed — ${esc(closed)}</b><p>Nobody is expected. Salaries are not reduced; daily-rate staff are not paid for the day. Anyone who still came in can be marked below and is paid an extra day.</p></div>` : `
         <div class="na-tally">${STATUS_ORDER.filter((k) => sum.counts[k]).map((k) => `<span class="na-s s-${k}">${SHORT[k]} <b>${sum.counts[k]}</b></span>`).join('')}${sum.missing ? `<span class="na-s s-none">To mark <b>${sum.missing}</b></span>` : sum.auto ? `<span class="na-s s-done">${sum.auto} present automatically</span>` : staff.length ? '<span class="na-s s-done">Everyone marked ✓</span>' : ''}</div>`}
         <div class="na-quick">
@@ -996,6 +1003,21 @@
       'auto-toggle': () => {
         data.settings.autoPresent = !data.settings.autoPresent; save(); render();
         toast(data.settings.autoPresent ? 'Workers now count as present automatically' : 'Automatic present is off — mark everyone each day');
+      },
+      'pay-all': () => {
+        const due = payReminders().filter((x) => x.urgent);
+        if (!due.length) return;
+        const total = round2(due.reduce((t, x) => t + x.amt, 0));
+        if (!confirm(`Record that everyone below was paid in full today?\n\n${due.map((x) => `${x.e.name}: ${money(x.amt)}`).join('\n')}\n\nTotal ${money(total)} (cash). To pay someone a different amount, tap their name instead.`)) return;
+        const ids = [];
+        for (const x of due) { const id = C.uid(); ids.push(id); data.payments.push({ id, empId: x.e.id, paidOn: C.localToday(), method: 'Cash', note: 'Pay day', net: round2(x.amt) }); }
+        save(); render();
+        toast(`${due.length} paid · ${money(total)}`, () => { data.payments = data.payments.filter((p) => !ids.includes(p.id)); save(); render(); toast('Undone'); });
+      },
+      'pay-list': () => {
+        const due = payReminders().filter((x) => x.urgent);
+        const total = round2(due.reduce((t, x) => t + x.amt, 0));
+        share(`*${data.settings.business}* — pay list, ${fmtDate(C.localToday(), true)}\n\n${due.map((x) => `${x.e.name}: ${money(x.amt)} (${x.why})`).join('\n')}\n\n*Total to pay: ${money(total)}*`);
       },
       'pin-lock': () => { locked = true; pinEntry = ''; pinMsg = ''; render(); },
       'pin-change': () => { if (!confirm('Choose a new PIN for this phone?')) return; clearPin(); pinFirst = ''; pinEntry = ''; pinMsg = ''; locked = false; render(); },
