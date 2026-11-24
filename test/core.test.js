@@ -57,6 +57,7 @@ test('fixed salary: absences and half days come off at salary / working days', (
 
 test('daily rate pays only recorded paid days; extra days on a day off are paid', () => {
   const d = C.blankData();
+  d.settings.autoPresent = false; // this test is about marking every day by hand
   const e = emp({ payType: 'daily', schedule: 'weekly', payDay: 5, rate: 300, workDays: [1, 2, 3, 4, 5] });
   d.employees.push(e);
   const p = C.periodFor(e, '2026-11-23'); // Sat 21 – Fri 27
@@ -164,4 +165,26 @@ test('running account starts from an opening balance', () => {
   assert.equal(a.earned, 450);   // first pay day (27 Nov) has not come yet
   assert.equal(a.owed, 450);
   assert.equal(a.nextPay, 2450);
+});
+
+test('present by default: unmarked working days count as present; only exceptions are tapped', () => {
+  const d = C.blankData();
+  d.settings.since = '2026-11-01';
+  assert.equal(d.settings.autoPresent, true);
+  const e = emp({ payType: 'daily', schedule: 'weekly', payDay: 5, rate: 300, workDays: [1, 2, 3, 4, 5] });
+  d.employees.push(e);
+  C.setMark(d, '2026-11-24', 'e1', { s: 'A' }); // the one exception
+  const r = C.calcPeriod(d, e, C.periodFor(e, '2026-11-23'), '2026-11-26'); // Sat 21 – Fri 27
+  // Mon 23, Wed 25, Thu 26 automatic; Tue 24 absent; Fri 27 still to come
+  assert.equal(r.counts.P, 3);
+  assert.equal(r.counts.auto, 3);
+  assert.equal(r.counts.unrecorded, 0);
+  assert.equal(r.gross, 900);
+  const day = C.daySummary(d, '2026-11-23');
+  assert.equal(day.missing, 0);
+  assert.equal(day.counts.P, 1);
+  // a day after today is not filled in yet, and switching it off brings back "not marked"
+  assert.equal(C.autoPresent(d, e, '2026-12-01', '2026-11-26'), false);
+  d.settings.autoPresent = false;
+  assert.equal(C.calcPeriod(d, e, C.periodFor(e, '2026-11-23'), '2026-11-26').counts.unrecorded, 3);
 });

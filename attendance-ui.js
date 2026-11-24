@@ -293,22 +293,23 @@
           ${rem.slice(0, 4).map((x) => `<button type="button" class="na-remind-row ${x.urgent ? 'urgent' : ''}" data-a="pay" data-e="${x.e.id}"><span><b>${esc(x.e.name)}</b><i>${x.why}</i></span><strong>${money(x.amt)}</strong></button>`).join('')}
           ${rem.length > 4 ? `<p class="na-hint na-pad-x">…and ${rem.length - 4} more under Pay.</p>` : ''}</section>` : ''; })() : ''}
         ${closed ? `<div class="na-card na-pad na-closed"><b>Shop closed — ${esc(closed)}</b><p>Nobody is expected. Salaries are not reduced; daily-rate staff are not paid for the day. Anyone who still came in can be marked below and is paid an extra day.</p></div>` : `
-        <div class="na-tally">${STATUS_ORDER.filter((k) => sum.counts[k]).map((k) => `<span class="na-s s-${k}">${SHORT[k]} <b>${sum.counts[k]}</b></span>`).join('')}${sum.missing ? `<span class="na-s s-none">To mark <b>${sum.missing}</b></span>` : staff.length ? '<span class="na-s s-done">Everyone marked ✓</span>' : ''}</div>`}
+        <div class="na-tally">${STATUS_ORDER.filter((k) => sum.counts[k]).map((k) => `<span class="na-s s-${k}">${SHORT[k]} <b>${sum.counts[k]}</b></span>`).join('')}${sum.missing ? `<span class="na-s s-none">To mark <b>${sum.missing}</b></span>` : sum.auto ? `<span class="na-s s-done">${sum.auto} present automatically</span>` : staff.length ? '<span class="na-s s-done">Everyone marked ✓</span>' : ''}</div>`}
         <div class="na-quick">
-          ${closed ? '' : sum.missing ? `<button type="button" class="na-btn primary" data-a="all-present">✓ Mark everyone else present (${sum.missing})</button>` : staff.length ? '<div class="na-done">✓ Everyone is marked for this day</div>' : ''}
+          ${closed ? '' : sum.missing ? `<button type="button" class="na-btn primary" data-a="all-present">✓ Mark everyone else present (${sum.missing})</button>` : sum.auto ? '<div class="na-done">✓ Everyone counts as present — tap only who was absent, late or off</div>' : staff.length ? '<div class="na-done">✓ Everyone is marked for this day</div>' : ''}
           <button type="button" class="na-btn wa" data-a="share-day">WhatsApp</button>
           <button type="button" class="na-btn" data-a="closed">${closed ? 'Shop open after all' : 'Shop closed'}</button>
         </div>
         <section class="na-list">
           ${staff.length ? staff.map((e) => {
-            const m = C.getMark(data, d, e.id) || {};
+            const auto = C.autoPresent(data, e, d);
+            const m = auto ? { ...(C.getMark(data, d, e.id) || {}), s: 'P', auto: true } : C.getMark(data, d, e.id) || {};
             const exp = C.expected(data, e, d);
             const extra = [num(m.ot) ? `+${num(m.ot)} h overtime` : '', m.note].filter(Boolean).map(esc).join(' · ');
             const moreOn = m.s && !MAIN_MARKS.includes(m.s);
             return `<div class="na-card na-row ${!exp && !m.s ? 'na-off' : ''}">
-              <div class="na-who"><b>${esc(e.name)}</b><i>${esc(e.role || '')}${exp ? '' : `${e.role ? ' · ' : ''}${closed ? 'shop closed' : e.startDate > d ? 'not started yet' : 'day off'}`}${extra ? `${e.role || !exp ? ' · ' : ''}<em>${extra}</em>` : ''}</i></div>
+              <div class="na-who"><b>${esc(e.name)}</b><i>${esc(e.role || '')}${auto ? `${e.role ? ' · ' : ''}<span class="na-autotag">present automatically</span>` : ''}${exp ? '' : `${e.role ? ' · ' : ''}${closed ? 'shop closed' : e.startDate > d ? 'not started yet' : 'day off'}`}${extra ? `${e.role || !exp ? ' · ' : ''}<em>${extra}</em>` : ''}</i></div>
               <div class="na-seg" role="group" aria-label="Attendance for ${esc(e.name)}">
-                ${MAIN_MARKS.map((k) => `<button type="button" class="s-${k} ${m.s === k ? 'on' : ''}" data-a="mark" data-e="${e.id}" data-s="${k}" aria-pressed="${m.s === k}" title="${STATUS[k].label}">${k === 'H' ? 'Half' : SHORT[k]}</button>`).join('')}
+                ${MAIN_MARKS.map((k) => `<button type="button" class="s-${k} ${m.s === k ? 'on' : ''} ${m.s === k && m.auto ? 'auto' : ''}" data-a="mark" data-e="${e.id}" data-s="${k}" aria-pressed="${m.s === k}" title="${STATUS[k].label}">${k === 'H' ? 'Half' : SHORT[k]}</button>`).join('')}
                 <button type="button" class="na-more ${moreOn ? `on s-${m.s}` : ''}" data-a="mark-sheet" data-e="${e.id}" aria-label="More for ${esc(e.name)}">${moreOn ? SHORT[m.s] : 'More'}</button>
               </div>
             </div>`;
@@ -353,18 +354,19 @@
             <tbody>${staff.map((e) => {
               const t = { P: 0, L: 0, H: 0, A: 0, SV: 0, ot: 0 };
               const cells = days.map((d) => {
-                const mk = C.getMark(data, d, e.id);
+                const autoP = C.autoPresent(data, e, d, now);
+                const mk = autoP ? { ...(C.getMark(data, d, e.id) || {}), s: 'P', auto: true } : C.getMark(data, d, e.id);
                 const exp = C.expected(data, e, d);
                 if (mk) { t.ot += num(mk.ot); if (mk.s === 'S' || mk.s === 'V') t.SV++; else if (t[mk.s] !== undefined) t[mk.s]++; }
                 const s = mk && mk.s;
                 const missing = !s && exp && d <= now && d >= (data.settings.since || '');
-                return `<td class="c ${s ? 's-' + s : ''} ${!exp && !s ? 'off' : ''} ${missing ? 'miss' : ''}" data-a="cell" data-e="${e.id}" data-d="${d}" title="${esc(fmtDate(d, true))}: ${s ? STATUS[s].label : missing ? 'not marked' : exp ? '' : 'not expected'}${mk && mk.note ? ' — ' + esc(mk.note) : ''}">${s || (missing ? '·' : '')}</td>`;
+                return `<td class="c ${s ? 's-' + s : ''} ${autoP ? 'auto' : ''} ${!exp && !s ? 'off' : ''} ${missing ? 'miss' : ''}" data-a="cell" data-e="${e.id}" data-d="${d}" title="${esc(fmtDate(d, true))}: ${autoP ? 'Present (automatic)' : s ? STATUS[s].label : missing ? 'not marked' : exp ? '' : 'not expected'}${mk && mk.note ? ' — ' + esc(mk.note) : ''}">${s || (missing ? '·' : '')}</td>`;
               }).join('');
               return `<tr><th class="na-sticky">${esc(e.name)}</th>${cells}<td class="t">${t.P + t.L}</td><td class="t">${t.L}</td><td class="t">${t.H}</td><td class="t ${t.A ? 'bad' : ''}">${t.A}</td><td class="t">${t.SV}</td><td class="t">${round2(t.ot) || ''}</td></tr>`;
             }).join('')}</tbody>
           </table>
         </section>
-        <p class="na-hint">Tap a square to change it: Present → Late → Half day → Absent → Sick → Leave → Day off → clear. A dot means a working day nobody has marked yet. Grey columns are days the shop was closed.</p>
+        <p class="na-hint">Tap a square to change it: Present → Late → Half day → Absent → Sick → Leave → Day off → back to start. Light green = present automatically. A dot means a working day nobody has marked yet. Grey columns are days the shop was closed.</p>
         <div class="na-legend">${STATUS_ORDER.map((k) => `<span><b class="c s-${k}">${k}</b>${STATUS[k].label}</span>`).join('')}</div>`;
     }
 
@@ -563,17 +565,19 @@
       C.eachDay(r.start, r.end, (d) => days.push(d));
       const gap = 3, cw = Math.min(40, (CW - gap * (days.length - 1)) / days.length);
       days.forEach((d, i) => {
-        const m = C.getMark(data, d, e.id), st = m && m.s, exp = C.expected(data, e, d), closed = data.closed[d];
+        const autoP = C.autoPresent(data, e, d, today);
+        const m = autoP ? { s: 'P' } : C.getMark(data, d, e.id), st = m && m.s, exp = C.expected(data, e, d), closed = data.closed[d];
         const cx = L + i * (cw + gap);
         P.text(cx + cw / 2, y, C.DAY_NAMES[C.dow(d)][0], { size: 6.5, color: FAINT, align: 'center' });
         let bg = '#ffffff', fg = FAINT, letter = '·';
-        if (st) { bg = COL[st] || MUTED; fg = '#ffffff'; letter = st; }
+        if (autoP) { bg = '#bbf7d0'; fg = '#166534'; letter = 'P'; }
+        else if (st) { bg = COL[st] || MUTED; fg = '#ffffff'; letter = st; }
         else if (closed) { bg = '#e2e8f0'; fg = MUTED; letter = 'C'; }
         else if (!exp) { bg = '#f1f5f9'; fg = '#cbd5e1'; letter = '–'; }
         else if (d <= today) { bg = '#fff7e6'; fg = '#d97706'; letter = '?'; }
         P.rect(cx, y + 5, cw, 26, bg, 4);
         if (!st && exp && !closed) P.frame(cx + 0.4, y + 5.4, cw - 0.8, 25.2, d <= today ? '#f5c46b' : LINE, 0.6);
-        P.text(cx + cw / 2, y + 16, String(+d.slice(8)), { size: cw < 16 ? 6 : 7, color: st ? '#ffffff' : MUTED, align: 'center' });
+        P.text(cx + cw / 2, y + 16, String(+d.slice(8)), { size: cw < 16 ? 6 : 7, color: autoP ? '#166534' : st ? '#ffffff' : MUTED, align: 'center' });
         P.text(cx + cw / 2, y + 27, letter, { size: cw < 16 ? 7.5 : 8.5, bold: true, color: fg, align: 'center' });
       });
       y += 44;
@@ -584,7 +588,7 @@
         P.text(L + i * tw, y + 14, String(v), { size: 11, bold: true, color: t === 'Absent' && c.A ? RED : INK });
       });
       y += 24;
-      P.text(L, y, 'P present · L late · H half day · A absent · S sick (paid) · V leave (paid) · O day off · C shop closed · – not a working day · ? not marked', { size: 6.8, color: FAINT });
+      P.text(L, y, 'P present (light green: automatic) · L late · H half day · A absent · S sick (paid) · V leave (paid) · O day off · C shop closed · – not a working day · ? not marked', { size: 6.8, color: FAINT });
       y += 20;
 
       // ---- earnings and deductions ----
@@ -801,7 +805,7 @@
         <section class="na-card na-pad"><h3 class="na-h3">How to use the app</h3>
           <ol class="na-steps">
             <li><b>Staff</b> — add each worker once: name, pay, and when they are paid.</li>
-            <li><b>Today</b> — every morning tap <i>Present</i>, <i>Late</i>, <i>Half day</i> or <i>Absent</i> for each worker. <i>Mark everyone else present</i> does the rest in one tap.</li>
+            <li><b>Today</b> — everyone counts as present by themselves. Only tap the exceptions: <i>Absent</i>, <i>Late</i>, <i>Half</i>, or <i>More</i> for sick, leave, day off and overtime.</li>
             <li><b>Pay</b> — shows what each worker has earned, what you paid and what is still to pay. Tap <i>Pay</i> whenever you hand over money — any amount, any day.</li>
             <li><b>Send pay slip</b> — makes a PDF pay slip and sends it on WhatsApp.</li>
             <li><b>Month</b> — the whole month at a glance; tap a square to fix a mistake.</li>
@@ -815,6 +819,10 @@
             ${field('Phone (printed on pay slips)', 'phone', s.phone)}
             ${field('Count wages from', 'since', s.since, { type: 'date', hint: 'The day you started using this app. Wages are counted from here, so older months do not show as unpaid.' })}
           </form></section>
+        <section class="na-card na-pad"><h3 class="na-h3">Attendance</h3>
+          <button type="button" class="na-switch ${s.autoPresent ? 'on' : ''}" data-a="auto-toggle" role="switch" aria-checked="${!!s.autoPresent}">
+            <span><b>Count workers as present automatically</b><i>${s.autoPresent ? 'On — every working day counts as Present. Only tap who was absent, late, on a half day, sick or off.' : 'Off — every worker must be marked each day.'}</i></span><em aria-hidden="true"></em></button>
+        </section>
         <section class="na-card na-pad"><h3 class="na-h3">Shop closed days</h3>
           ${Object.keys(data.closed).length ? `<table class="na-lines">${Object.keys(data.closed).sort().reverse().slice(0, 12).map((d) => `<tr><td>${fmtDate(d, true)}</td><td>${esc(data.closed[d])}</td><td><button type="button" class="na-x sm" data-a="del-closed" data-d="${d}" aria-label="Remove">×</button></td></tr>`).join('')}</table>` : '<p class="na-hint">None yet. Use “Shop closed” on the daily register for public holidays and days the shop does not open.</p>'}
         </section>
@@ -892,8 +900,12 @@
       'share-day': () => share(C.dayText(data, ui.day)),
       month: (t) => { const [y, m] = ui.month.split('-').map(Number); const d = new Date(Date.UTC(y, m - 1 + +t.dataset.n, 1)); ui.month = d.toISOString().slice(0, 7); render(); },
       cell: (t) => {
-        const cur = (C.getMark(data, t.dataset.d, t.dataset.e) || {}).s || '';
-        C.setMark(data, t.dataset.d, t.dataset.e, { s: MONTH_CYCLE[(MONTH_CYCLE.indexOf(cur) + 1) % MONTH_CYCLE.length] });
+        const emp = empById(t.dataset.e);
+        // an automatic Present counts as Present, so the first tap moves on to Late
+        const cur = (C.getMark(data, t.dataset.d, t.dataset.e) || {}).s || (C.autoPresent(data, emp, t.dataset.d) ? 'P' : '');
+        let next = MONTH_CYCLE[(MONTH_CYCLE.indexOf(cur) + 1) % MONTH_CYCLE.length];
+        if (next === 'P' && C.autoPresent(data, emp, t.dataset.d)) next = 'L';
+        C.setMark(data, t.dataset.d, t.dataset.e, { s: next });
         save(); render();
       },
       'print-month': () => printMonth(),
@@ -980,6 +992,10 @@
       'forgot-reset': () => {
         if (!confirm('Remove this phone? Changes that have not reached the cloud yet are lost. Then paste the setup link to set it up again.')) return;
         cloud.signOut(); cloud.clearLocal(); clearPin(); locked = false; pinEntry = ''; pinMsg = ''; data = C.normalise(null); closeModal(); render();
+      },
+      'auto-toggle': () => {
+        data.settings.autoPresent = !data.settings.autoPresent; save(); render();
+        toast(data.settings.autoPresent ? 'Workers now count as present automatically' : 'Automatic present is off — mark everyone each day');
       },
       'pin-lock': () => { locked = true; pinEntry = ''; pinMsg = ''; render(); },
       'pin-change': () => { if (!confirm('Choose a new PIN for this phone?')) return; clearPin(); pinFirst = ''; pinEntry = ''; pinMsg = ''; locked = false; render(); },

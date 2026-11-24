@@ -52,7 +52,9 @@
   function blankData() {
     return {
       app: 'nms-attendance', version: VERSION,
-      settings: { business: "Nazeer's Motor Spares", currency: 'R', phone: '', since: '' }, // since: first day attendance was kept here
+      // since: first day attendance was kept here. autoPresent: a working day nobody marked counts as Present,
+      // so only the exceptions (absent, late, half day, sick…) need a tap
+      settings: { business: "Nazeer's Motor Spares", currency: 'R', phone: '', since: '', autoPresent: true },
       employees: [],
       marks: {},    // { '2026-11-23': { employeeId: { s: 'P', ot: 0, note: '' } } }
       closed: {},   // { '2026-12-25': 'Christmas Day' } — the shop is closed, nobody is expected
@@ -112,6 +114,15 @@
     if (emp.startDate && iso < emp.startDate) return false;
     if (emp.endDate && iso > emp.endDate) return false;
     return isWorkDay(emp, iso);
+  }
+
+  /* Present automatically: a working day (up to today, from the "count wages from" date) that nobody marked */
+  function autoPresent(data, emp, iso, todayISO) {
+    if (!data.settings.autoPresent) return false;
+    const now = todayISO || localToday();
+    if (iso > now || (data.settings.since && iso < data.settings.since)) return false;
+    const m = getMark(data, iso, emp.id);
+    return !(m && m.s) && expected(data, emp, iso);
   }
 
   /* ---------- pay periods ---------- */
@@ -185,7 +196,13 @@
       const s = m && m.s;
       if (!s) {
         // days before attendance was kept in this app are not flagged (and not deducted)
-        if (scheduled) { if (d > now) c.upcoming++; else if (!data.settings.since || d >= data.settings.since) { c.unrecorded++; unrecordedDates.push(d); } }
+        if (scheduled) {
+          if (d > now) c.upcoming++;
+          else if (!data.settings.since || d >= data.settings.since) {
+            if (data.settings.autoPresent) { c.P++; c.auto = (c.auto || 0) + 1; }
+            else { c.unrecorded++; unrecordedDates.push(d); }
+          }
+        }
         return;
       }
       if (!STATUS[s]) return;
@@ -273,12 +290,13 @@
 
   /* ---------- summaries ---------- */
   function daySummary(data, iso) {
-    const out = { date: iso, closed: data.closed[iso] || '', rows: [], counts: {}, missing: 0 };
+    const out = { date: iso, closed: data.closed[iso] || '', rows: [], counts: {}, missing: 0, auto: 0 };
     for (const k of STATUS_ORDER) out.counts[k] = 0;
     for (const e of data.employees.filter((x) => x.active !== false)) {
-      const m = getMark(data, iso, e.id);
+      let m = getMark(data, iso, e.id);
       const exp = expected(data, e, iso);
       if (m && m.s) out.counts[m.s]++;
+      else if (autoPresent(data, e, iso)) { m = { ...(m || {}), s: 'P', auto: true }; out.counts.P++; out.auto++; }
       else if (exp) out.missing++;
       if (exp || (m && m.s)) out.rows.push({ emp: e, mark: m, expected: exp });
     }
@@ -322,7 +340,7 @@
     VERSION, STATUS, STATUS_ORDER, SCHEDULES, PAY_TYPES, DAY_NAMES, MONTHS,
     blankData, blankEmployee, normalise, uid, num, round2,
     toISO, addDays, dow, daysBetween, daysInMonth, localToday, fmtDate, eachDay,
-    getMark, setMark, isWorkDay, expected,
+    getMark, setMark, isWorkDay, expected, autoPresent,
     periodFor, periodAt, nextPayDay, calcPeriod, account, payDaysOf, daySummary, dayText, payText,
   };
 });
